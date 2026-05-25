@@ -5,21 +5,39 @@
 ---
 
 ## 1. 개발 목적 및 핵심 설계 방향
-- **즉각적인 실행 가능성**: 이미지/오디오 등의 외부 에셋 의존성을 완전히 제거하고, Phaser 3의 내장 그래픽 그리기 기능을 통해 실시간으로 텍스처를 동적 생성합니다.
-- **다채로운 상태 변화 (변신 시스템)**: Normal, Unicorn, Pegasus, Alicorn의 4가지 고유 상태를 색상 및 시각적 특징(뿔, 날개 등)으로 명확히 구분하고, 각 상태에 따른 특화 물리 로직(비행 게이지, 자석 효과 등)을 완벽 구현합니다.
+- **즉각적인 실행 및 고품질 에셋**: 기본 타일, 적 캐릭터, 특수 기믹은 Phaser 3 내장 그래픽 그리기로 즉각 구현하되, 플레이어 주인공 캐릭터는 고품질 스프라이트 시트(`silsea_sprite.jpg`)를 로드하여 사용하며, 배경음악(`basic_bgm.mp3`)을 기본 재생합니다.
+- **실시간 배경 제거 (Chroma-key) 처리**: 주인공 캐릭터 이미지의 격자 무늬(Checkerboard) 배경을 HTML5 Canvas API를 이용하여 런타임에 실시간으로 감지해 투명화(Alpha = 0)시킵니다.
+- **다채로운 상태 변화 (변신 시스템)**: Normal, Unicorn, Pegasus, Alicorn의 4가지 고유 상태를 색상 틴트(White, Blue, Cyan, Gold)로 명확히 구분하고, 각 상태에 따른 특화 물리 로직(비행 게이지, 자석 효과 등)을 완벽 구현합니다.
 - **몰입감 있는 레벨 디자인**: 일반 몬스터, 함정, 공중 장애물, 특수 기믹(스코어 도둑 까치)을 적절히 배치하고 최종 종착지(x=2800)에 페이즈별 패턴을 가진 미드 보스를 배치하여 완성도 높은 구성을 가집니다.
 
 ---
 
 ## 2. 세부 아키텍처 및 모듈 계획
 
-### A. 리소스 및 텍스처 프리-베이킹 (Boot Scene)
-- 렌더링 최적화 및 에셋 독립성을 위해 게임 시작 시 `makeTexture` 헬퍼 함수를 통해 HTML5 Canvas 상에 기하학 도형을 그리고, 이를 Phaser 3의 텍스처 맵에 등록합니다.
-- 생성 텍스처 목록:
-  - 타일/배경: 그라데이션 배경(`bg`), 잔디 타일(`ground`), 흙 플랫폼(`platform`), 포탈(`gate`)
-  - 플레이어 상태별 텍스처: `player_normal`, `player_unicorn`, `player_pegasus`, `player_alicorn`
-  - 아이템: 별(`star`), 날개 상자(`starbox`), 변신 아이템 3종(`item_horn`, `item_wings`, `item_rainbow`)
-  - 적/장애물: 생감자(`potato`), 가시 호박(`pumpkin`), 먹구름(`cloud`), 번개(`lightning`), 까치(`magpie`), 보스(`boss`, `boss_proj`)
+### A. 리소스 로딩 및 에셋 매핑 (Boot Scene)
+- **외부 에셋 및 스프라이트 시트 로딩**: 
+  - 주인공 캐릭터 시트 (`assets/silsea_sprite.jpg`)
+  - Kenney 타일 스프라이트 시트 및 XML (`spritesheet-tiles-default.png`/`xml`)
+  - Kenney 적 캐릭터 스프라이트 시트 및 XML (`spritesheet-enemies-default.png`/`xml`)
+- **실시간 크로마키 투명화**: 주인공 이미지의 회색 격자 무늬 배경 스펙트럼(`isBgColor1`, `isBgColor2`)을 Canvas API로 100% 검출하여 완전 무결한 투명화 처리를 실행한 뒤 프레임을 Uniform `128x136` 비율로 정밀 컷팅해 등록합니다.
+- **게임 에셋 교체 및 비주얼 업그레이드**:
+  - 지면 타일: `terrain_grass_block`
+  - 플로팅 플랫폼: 자연스러운 끝단 마무리를 위해 좌측(`terrain_grass_horizontal_left`), 우측(`terrain_grass_horizontal_right`), 중간(`terrain_grass_horizontal_middle`) 타일을 동적 구분 배치
+  - 스코어 획득 아이템: `star` 타일
+  - 아이템 상자 (Star Box): `block_coin`을 사용하고, 들이받은 후에는 빈 상자 타일인 `block_coin_active`로 실시간 프레임 전환
+  - 유니콘/페가수스/알리콘 변신용 3종 젬: 각각 `gem_blue`, `gem_green`, `gem_red` 매핑
+  - 적군 캐릭터: 생감자는 기어 다니는 달팽이(`snail_walk_a`/`b`), 가시 호박은 가시 슬라임(`slime_spike_rest`), 까치는 날아다니는 벌(`bee_a`/`b`)로 업그레이드
+  - 보스 몬스터: 2.5배 거대화된 점박이 블록 슬라임(`slime_block_walk_a`/`b`)으로 디자인 및 패턴 애니메이션 재생
+  - 체력 하트 UI: `hud_heart` 및 `hud_heart_empty` 타일 연동
+- **사운드 효과음 (SFX) 시스템**:
+  - 배경음악: `basic_bgm.mp3` 40% 볼륨 무한 반복 재생 (브라우저 정책 해제용 인터랙션 리스너 내장)
+  - 점프 액션: `sfx_jump.ogg`
+  - 상자 타격: `sfx_bump.ogg`
+  - 스코어 별 획득: `sfx_coin.ogg`
+  - 아이템 드롭/획득: `sfx_gem.ogg` / `sfx_magic.ogg` (변신 효과음)
+  - 대미지 피격/상태 해제: `sfx_hurt.ogg`
+  - 몬스터 격파: `sfx_disappear.ogg`
+  - 투사체 발사 (구름 번개/보스 미사일): `sfx_throw.ogg`
 
 ### B. 플레이어 상태 머신 및 물리 (Player State & Physics)
 - **물리 설정**: Arcade Physics 기반의 중력 설정(`gravity: 700`) 및 마찰력 제어.
