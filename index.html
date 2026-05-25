@@ -1,0 +1,1194 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>실세아와 구운 감자의 대모험</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #0a0a1a;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      font-family: 'Segoe UI', sans-serif;
+      overflow: hidden;
+    }
+    #game-container {
+      position: relative;
+      box-shadow: 0 0 60px rgba(100, 50, 255, 0.5),
+                  0 0 120px rgba(50, 100, 255, 0.3);
+      border-radius: 4px;
+      border: 2px solid rgba(150, 100, 255, 0.4);
+    }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+<div id="game-container"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/phaser@3.70.0/dist/phaser.min.js"></script>
+<script>
+// ============================================================
+// 실세아와 구운 감자의 대모험
+// A complete Phaser 3 2D side-scrolling platformer
+// ============================================================
+
+// ----- CONSTANTS -----
+const WORLD_WIDTH  = 3200;
+const WORLD_HEIGHT = 600;
+const GAME_W = 800;
+const GAME_H = 600;
+
+// Player state IDs
+const STATE = { NORMAL: 0, UNICORN: 1, PEGASUS: 2, ALICORN: 3 };
+
+// Player state colours
+const STATE_COLOR = {
+  [STATE.NORMAL]:  0xffffff,
+  [STATE.UNICORN]: 0x4488ff,
+  [STATE.PEGASUS]: 0x00ffff,
+  [STATE.ALICORN]: 0xffd700,
+};
+
+// ============================================================
+// HELPER – draw & bake a texture via Graphics
+// ============================================================
+function makeTexture(scene, key, w, h, fn) {
+  const g = scene.make.graphics({ x: 0, y: 0, add: false });
+  fn(g, w, h);
+  g.generateTexture(key, w, h);
+  g.destroy();
+}
+
+// ============================================================
+// BOOT SCENE – generate all textures
+// ============================================================
+class BootScene extends Phaser.Scene {
+  constructor() { super('Boot'); }
+
+  create() {
+    // ---- background sky gradient ----
+    makeTexture(this, 'bg', GAME_W, GAME_H, (g) => {
+      for (let y = 0; y < GAME_H; y++) {
+        const t = y / GAME_H;
+        const r = Phaser.Display.Color.Interpolate.ColorWithColor(
+          { r: 30, g: 20, b: 80 }, { r: 120, g: 200, b: 255 }, 100, t * 100
+        );
+        g.fillStyle(Phaser.Display.Color.GetColor(r.r, r.g, r.b), 1);
+        g.fillRect(0, y, GAME_W, 1);
+      }
+    });
+
+    // ---- ground tile ----
+    makeTexture(this, 'ground', 64, 32, (g) => {
+      g.fillStyle(0x5a3a1a);
+      g.fillRect(0, 0, 64, 32);
+      g.fillStyle(0x7cba3c);
+      g.fillRect(0, 0, 64, 10);
+      g.lineStyle(1, 0x3a2a0a);
+      for (let x = 0; x < 64; x += 16) {
+        g.beginPath(); g.moveTo(x, 10); g.lineTo(x, 32); g.strokePath();
+      }
+    });
+
+    // ---- platform tile ----
+    makeTexture(this, 'platform', 64, 20, (g) => {
+      g.fillStyle(0x8b5e3c);
+      g.fillRect(0, 0, 64, 20);
+      g.fillStyle(0xa08060);
+      g.fillRect(0, 0, 64, 6);
+      g.lineStyle(1, 0x5a3a1a);
+      for (let x = 0; x < 64; x += 16) {
+        g.beginPath(); g.moveTo(x, 6); g.lineTo(x, 20); g.strokePath();
+      }
+    });
+
+    // ---- player states ----
+    this._makePlayer('player_normal',  STATE.NORMAL);
+    this._makePlayer('player_unicorn', STATE.UNICORN);
+    this._makePlayer('player_pegasus', STATE.PEGASUS);
+    this._makePlayer('player_alicorn', STATE.ALICORN);
+
+    // ---- star box ----
+    makeTexture(this, 'starbox', 32, 32, (g) => {
+      g.fillStyle(0xf0c040);
+      g.fillRect(0, 0, 32, 32);
+      g.lineStyle(3, 0xd08000);
+      g.strokeRect(0, 0, 32, 32);
+      g.fillStyle(0xffffff);
+      // simple star shape via polygon
+      g.fillTriangle(16, 4, 10, 22, 28, 10);
+      g.fillTriangle(16, 4, 22, 22, 4, 10);
+    });
+
+    // ---- star item ----
+    makeTexture(this, 'star', 16, 16, (g) => {
+      g.fillStyle(0xffee00);
+      g.fillTriangle(8, 0, 4, 12, 16, 5);
+      g.fillTriangle(8, 0, 12, 12, 0, 5);
+    });
+
+    // ---- horn item (unicorn) ----
+    makeTexture(this, 'item_horn', 24, 24, (g) => {
+      g.fillStyle(0x4488ff);
+      g.fillTriangle(12, 0, 4, 24, 20, 24);
+      g.lineStyle(2, 0x0044aa);
+      g.strokeTriangle(12, 0, 4, 24, 20, 24);
+    });
+
+    // ---- wings item (pegasus) ----
+    makeTexture(this, 'item_wings', 32, 24, (g) => {
+      g.fillStyle(0x00ccff);
+      g.fillEllipse(10, 12, 20, 14);
+      g.fillEllipse(22, 12, 20, 14);
+      g.fillStyle(0x0088cc);
+      g.fillEllipse(16, 14, 12, 8);
+    });
+
+    // ---- rainbow wings item (alicorn) ----
+    makeTexture(this, 'item_rainbow', 32, 24, (g) => {
+      const cols = [0xff0000, 0xff8800, 0xffff00, 0x00ff00, 0x0088ff, 0x8800ff];
+      for (let i = 0; i < 6; i++) {
+        g.fillStyle(cols[i]);
+        g.fillRect(i * 5, 6, 5, 18);
+      }
+      g.fillStyle(0xffd700);
+      g.fillEllipse(16, 6, 24, 10);
+    });
+
+    // ---- raw potato (enemy) ----
+    makeTexture(this, 'potato', 32, 28, (g) => {
+      g.fillStyle(0xc8a060);
+      g.fillEllipse(16, 16, 30, 24);
+      g.fillStyle(0xa07840);
+      g.fillCircle(8, 12, 3);
+      g.fillCircle(20, 8, 2);
+      g.fillCircle(24, 18, 3);
+      // tiny eyes
+      g.fillStyle(0x000000);
+      g.fillCircle(10, 10, 2);
+      g.fillCircle(22, 10, 2);
+    });
+
+    // ---- thorny pumpkin ----
+    makeTexture(this, 'pumpkin', 36, 36, (g) => {
+      g.fillStyle(0xff6600);
+      g.fillEllipse(18, 22, 32, 26);
+      g.fillStyle(0x228800);
+      g.fillRect(15, 2, 6, 12);
+      // thorns
+      g.fillStyle(0xff2200);
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        const tx = 18 + Math.cos(a) * 17;
+        const ty = 22 + Math.sin(a) * 14;
+        g.fillTriangle(tx, ty, tx - 3, ty + 5, tx + 3, ty + 5);
+      }
+      g.fillStyle(0x000000);
+      g.fillTriangle(12, 20, 8, 26, 16, 26);
+      g.fillTriangle(24, 20, 20, 26, 28, 26);
+    });
+
+    // ---- dark cloud ----
+    makeTexture(this, 'cloud', 64, 40, (g) => {
+      g.fillStyle(0x445566);
+      g.fillCircle(20, 24, 16);
+      g.fillCircle(32, 18, 20);
+      g.fillCircle(46, 24, 14);
+      g.fillRect(8, 24, 50, 14);
+      // lightning bolt decoration
+      g.fillStyle(0xffff00, 0.8);
+      g.fillTriangle(28, 4, 24, 20, 32, 20);
+      g.fillTriangle(36, 20, 30, 36, 38, 36);
+    });
+
+    // ---- lightning bolt projectile ----
+    makeTexture(this, 'lightning', 10, 28, (g) => {
+      g.fillStyle(0xffff00);
+      g.fillTriangle(5, 0, 0, 14, 10, 14);
+      g.fillTriangle(5, 28, 0, 14, 10, 14);
+      g.fillStyle(0xffffff, 0.6);
+      g.fillRect(3, 0, 4, 28);
+    });
+
+    // ---- percent magpie ----
+    makeTexture(this, 'magpie', 36, 28, (g) => {
+      // body
+      g.fillStyle(0x222222);
+      g.fillEllipse(18, 18, 30, 22);
+      // white belly
+      g.fillStyle(0xffffff);
+      g.fillEllipse(22, 20, 14, 12);
+      // wing
+      g.fillStyle(0x111111);
+      g.fillEllipse(10, 14, 18, 10);
+      // beak
+      g.fillStyle(0xff8800);
+      g.fillTriangle(34, 12, 28, 10, 28, 16);
+      // eye
+      g.fillStyle(0xffffff);
+      g.fillCircle(28, 12, 3);
+      g.fillStyle(0x000000);
+      g.fillCircle(29, 12, 2);
+      // % symbol on body
+      g.fillStyle(0xffff00);
+      g.fillCircle(16, 16, 2);
+      g.fillCircle(22, 22, 2);
+      g.lineStyle(2, 0xffff00);
+      g.beginPath(); g.moveTo(22, 14); g.lineTo(14, 24); g.strokePath();
+    });
+
+    // ---- boss: burnt potato king ----
+    makeTexture(this, 'boss', 80, 72, (g) => {
+      // main body
+      g.fillStyle(0x111111);
+      g.fillEllipse(40, 44, 72, 56);
+      // charred texture
+      g.fillStyle(0x222222);
+      g.fillCircle(20, 38, 8);
+      g.fillCircle(55, 30, 10);
+      g.fillCircle(32, 55, 7);
+      // crown
+      g.fillStyle(0x3a0000);
+      g.fillRect(18, 8, 44, 14);
+      g.fillTriangle(18, 8, 24, 0, 30, 8);
+      g.fillTriangle(34, 8, 40, 0, 46, 8);
+      g.fillTriangle(50, 8, 56, 0, 62, 8);
+      // glowing evil eyes
+      g.fillStyle(0xff2200);
+      g.fillCircle(28, 36, 8);
+      g.fillCircle(52, 36, 8);
+      g.fillStyle(0xff6600);
+      g.fillCircle(28, 36, 4);
+      g.fillCircle(52, 36, 4);
+      // angry mouth
+      g.lineStyle(3, 0xff2200);
+      g.beginPath();
+      g.moveTo(24, 54); g.lineTo(28, 60); g.lineTo(40, 56); g.lineTo(52, 60); g.lineTo(56, 54);
+      g.strokePath();
+    });
+
+    // ---- boss projectile ----
+    makeTexture(this, 'boss_proj', 18, 14, (g) => {
+      g.fillStyle(0x111111);
+      g.fillEllipse(9, 7, 18, 14);
+      g.fillStyle(0xff2200, 0.6);
+      g.fillCircle(9, 7, 5);
+    });
+
+    // ---- heart UI ----
+    makeTexture(this, 'heart', 20, 18, (g) => {
+      g.fillStyle(0xff2244);
+      g.fillCircle(6, 6, 6);
+      g.fillCircle(14, 6, 6);
+      g.fillTriangle(0, 8, 10, 20, 20, 8);
+    });
+
+    // ---- empty heart ----
+    makeTexture(this, 'heart_empty', 20, 18, (g) => {
+      g.lineStyle(2, 0x884466);
+      g.strokeCircle(6, 6, 6);
+      g.strokeCircle(14, 6, 6);
+      g.strokeTriangle(0, 8, 10, 20, 20, 8);
+    });
+
+    // ---- rainbow gate ----
+    makeTexture(this, 'gate', 80, 120, (g) => {
+      const cols = [0xff0000, 0xff7700, 0xffff00, 0x00ff00, 0x0088ff, 0x8800ff];
+      cols.forEach((c, i) => {
+        g.lineStyle(6, c, 0.9);
+        g.strokeRect(i * 5 + 3, i * 5 + 3, 80 - i * 10 - 6, 120 - i * 10 - 6);
+      });
+      g.fillStyle(0xffffff, 0.15);
+      g.fillRect(10, 10, 60, 100);
+    });
+
+    // ---- magnet effect ring ----
+    makeTexture(this, 'magnet_ring', 400, 400, (g) => {
+      g.lineStyle(2, 0x4488ff, 0.2);
+      g.strokeCircle(200, 200, 200);
+    });
+
+    this.scene.start('Game');
+  }
+
+  _makePlayer(key, state) {
+    const col = STATE_COLOR[state];
+    makeTexture(this, key, 28, 36, (g) => {
+      // body
+      g.fillStyle(col);
+      g.fillRect(4, 10, 20, 20);
+      // head
+      g.fillStyle(col);
+      g.fillCircle(14, 9, 10);
+      // face
+      g.fillStyle(0x000000);
+      g.fillCircle(10, 7, 2);
+      g.fillCircle(18, 7, 2);
+      g.fillStyle(0xff6688);
+      g.fillEllipse(14, 12, 8, 4);
+      // legs
+      g.fillStyle(col === 0xffffff ? 0xdddddd : Phaser.Display.Color.ValueToColor(col).darken(20).color);
+      g.fillRect(4, 30, 8, 6);
+      g.fillRect(16, 30, 8, 6);
+
+      // State-specific decorations
+      if (state === STATE.UNICORN) {
+        // Horn
+        g.fillStyle(0xaaccff);
+        g.fillTriangle(14, -4, 10, 8, 18, 8);
+        g.lineStyle(1, 0x4488ff);
+        g.strokeTriangle(14, -4, 10, 8, 18, 8);
+      }
+      if (state === STATE.PEGASUS) {
+        // Wings
+        g.fillStyle(0x00eeee);
+        g.fillEllipse(-6, 18, 18, 10);
+        g.fillEllipse(34, 18, 18, 10);
+      }
+      if (state === STATE.ALICORN) {
+        // Horn + Wings + glow outline
+        g.fillStyle(0xffd700);
+        g.fillTriangle(14, -5, 10, 8, 18, 8);
+        g.lineStyle(2, 0xff8800);
+        g.strokeTriangle(14, -5, 10, 8, 18, 8);
+        g.fillStyle(0xffaa00, 0.7);
+        g.fillEllipse(-8, 18, 22, 12);
+        g.fillEllipse(36, 18, 22, 12);
+        // Glow aura
+        g.lineStyle(3, 0xffd700, 0.5);
+        g.strokeCircle(14, 18, 20);
+      }
+    });
+  }
+}
+
+// ============================================================
+// GAME SCENE
+// ============================================================
+class GameScene extends Phaser.Scene {
+  constructor() { super('Game'); }
+
+  // ----------------------------------------------------------
+  init() {
+    this.score        = 0;       // stored as integer percentage
+    this.playerHP     = 3;
+    this.playerState  = STATE.NORMAL;
+    this.flightGauge  = 8;       // seconds remaining
+    this.isFlying     = false;
+    this.isStunned    = false;
+    this.isInvincible = false;   // brief invincibility after damage
+    this.gameOver     = false;
+    this.gameWon      = false;
+    this.bossSpawned  = false;
+    this.bossHP       = 3;
+    this.bossPhase    = 'idle'; // idle | quake | shoot
+    this.bossTimer    = 0;
+  }
+
+  // ----------------------------------------------------------
+  create() {
+    // ---- scrolling BG ----
+    this.add.tileSprite(0, 0, WORLD_WIDTH, GAME_H, 'bg').setOrigin(0, 0).setScrollFactor(0.3);
+
+    // ---- physics world ----
+    this.physics.world.setBounds(0, 0, WORLD_WIDTH, GAME_H + 200);
+
+    // ---- groups ----
+    this.platforms     = this.physics.add.staticGroup();
+    this.starBoxes     = this.physics.add.staticGroup();
+    this.stars         = this.physics.add.group({ allowGravity: true });
+    this.items         = this.physics.add.group({ allowGravity: true });
+    this.enemies       = this.physics.add.group({ allowGravity: true });
+    this.pumpkins      = this.physics.add.staticGroup();
+    this.clouds        = this.physics.add.group({ allowGravity: false });
+    this.lightnings    = this.physics.add.group({ allowGravity: true });
+    this.magpies       = this.physics.add.group({ allowGravity: true });
+    this.bossProjs     = this.physics.add.group({ allowGravity: false });
+
+    // ---- build level ----
+    this._buildLevel();
+
+    // ---- player ----
+    this.player = this.physics.add.sprite(80, 400, 'player_normal');
+    this.player.setCollideWorldBounds(true);
+    this.player.body.setSize(20, 30);
+    this.player.body.setOffset(4, 6);
+
+    // ---- camera ----
+    this.cameras.main.setBounds(0, 0, WORLD_WIDTH, GAME_H);
+    this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
+
+    // ---- colliders ----
+    this.physics.add.collider(this.player, this.platforms);
+    this.physics.add.collider(this.enemies, this.platforms);
+    this.physics.add.collider(this.stars,   this.platforms);
+    this.physics.add.collider(this.items,   this.platforms);
+    this.physics.add.collider(this.magpies, this.platforms);
+    this.physics.add.collider(this.lightnings, this.platforms, (l) => l.destroy());
+
+    // --- StarBox hit from below ---
+    this.physics.add.collider(this.player, this.starBoxes, this._hitStarBox, null, this);
+
+    // ---- overlaps ----
+    this.physics.add.overlap(this.player, this.stars,      this._collectStar,    null, this);
+    this.physics.add.overlap(this.player, this.items,      this._collectItem,    null, this);
+    this.physics.add.overlap(this.player, this.enemies,    this._hitEnemy,       null, this);
+    this.physics.add.overlap(this.player, this.pumpkins,   this._hitPumpkin,     null, this);
+    this.physics.add.overlap(this.player, this.lightnings, this._hitLightning,   null, this);
+    this.physics.add.overlap(this.player, this.magpies,    this._hitMagpie,      null, this);
+    this.physics.add.overlap(this.player, this.bossProjs,  this._hitBossProj,    null, this);
+
+    // ---- input ----
+    this.cursors = this.input.keyboard.createCursorKeys();
+    this.spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
+
+    // ---- HUD (fixed to camera) ----
+    this._buildHUD();
+
+    // ---- spawn clouds & magpies periodically ----
+    this.time.addEvent({ delay: 5000, callback: this._spawnCloud,  callbackScope: this, loop: true });
+    this.time.addEvent({ delay: 8000, callback: this._spawnMagpie, callbackScope: this, loop: true });
+    // Initial clouds
+    for (let i = 0; i < 5; i++) this._spawnCloud();
+  }
+
+  // ----------------------------------------------------------
+  _buildLevel() {
+    // Ground slabs
+    const groundY = GAME_H - 16; // top of ground row
+    // Main ground – leave a few pits
+    const groundSegments = [
+      [0,    800],
+      [900,  1600],
+      [1700, 2200],
+      [2300, 3200],
+    ];
+    groundSegments.forEach(([start, end]) => {
+      for (let x = start; x < end; x += 64) {
+        const tile = this.platforms.create(x + 32, groundY, 'ground');
+        tile.refreshBody();
+      }
+    });
+
+    // Floating platforms
+    const plats = [
+      [200, 440, 4], [400, 380, 3], [600, 320, 3],
+      [800, 400, 4], [1000, 340, 3],[1200, 280, 4],
+      [1400, 360, 3],[1500, 290, 3],[1700, 380, 4],
+      [1900, 310, 3],[2050, 250, 4],[2200, 380, 3],
+      [2400, 300, 4],[2550, 240, 3],[2700, 340, 3],
+      [2900, 380, 4],[3000, 310, 3],[3100, 260, 2],
+    ];
+    plats.forEach(([x, y, tiles]) => {
+      for (let i = 0; i < tiles; i++) {
+        const t = this.platforms.create(x + i * 64 + 32, y, 'platform');
+        t.refreshBody();
+      }
+    });
+
+    // Star boxes
+    const boxes = [
+      [250, 380], [450, 310], [650, 250], [900, 330], [1050, 270],
+      [1300, 210], [1600, 220], [1800, 310], [2100, 180], [2450, 230],
+      [2650, 170], [2950, 310],
+    ];
+    boxes.forEach(([x, y]) => {
+      const b = this.starBoxes.create(x, y, 'starbox');
+      b.refreshBody();
+      b.setData('hit', false);
+    });
+
+    // Enemies – raw potatoes
+    const potatoXs = [350, 750, 1100, 1450, 1750, 2000, 2350, 2650, 2950];
+    potatoXs.forEach(x => {
+      const e = this.enemies.create(x, GAME_H - 60, 'potato');
+      e.setData('type', 'potato');
+      e.setData('dir', 1);
+      e.body.setSize(28, 24);
+      e.setVelocityX(60);
+    });
+
+    // Thorny pumpkins
+    const pumpkinXs = [500, 1200, 1900, 2500, 2800];
+    pumpkinXs.forEach(x => {
+      const p = this.pumpkins.create(x, GAME_H - 50, 'pumpkin');
+      p.refreshBody();
+    });
+
+    // Stars scattered on platforms
+    const starPositions = [
+      [220, 420],[260,420],[300,420],
+      [820,380],[860,380],
+      [1220,260],[1260,260],
+      [1920,290],[1960,290],[2000,290],
+      [2420,280],[2460,280],
+    ];
+    starPositions.forEach(([x,y]) => {
+      const s = this.stars.create(x, y, 'star');
+      s.setBounceY(0.3);
+      s.body.setAllowGravity(true);
+    });
+  }
+
+  // ----------------------------------------------------------
+  _buildHUD() {
+    const cam = this.cameras.main;
+
+    // Background panel
+    this.hudBg = this.add.rectangle(0, 0, 260, 72, 0x000000, 0.55)
+      .setOrigin(0, 0).setScrollFactor(0).setDepth(100);
+
+    // Name label
+    this.nameText = this.add.text(10, 6, '1P 실세아', {
+      fontSize: '14px', fill: '#ffd700', fontFamily: 'sans-serif', fontStyle: 'bold'
+    }).setScrollFactor(0).setDepth(101);
+
+    // Hearts
+    this.heartImages = [];
+    for (let i = 0; i < 3; i++) {
+      const h = this.add.image(12 + i * 26, 30, 'heart')
+        .setScrollFactor(0).setDepth(101).setOrigin(0, 0);
+      this.heartImages.push(h);
+    }
+
+    // Score
+    this.scoreText = this.add.text(10, 52, 'Score: 0%', {
+      fontSize: '13px', fill: '#ffffff', fontFamily: 'sans-serif'
+    }).setScrollFactor(0).setDepth(101);
+
+    // State label
+    this.stateText = this.add.text(GAME_W - 10, 6, '●  일반', {
+      fontSize: '13px', fill: '#ffffff', fontFamily: 'sans-serif', align: 'right'
+    }).setOrigin(1, 0).setScrollFactor(0).setDepth(101);
+
+    // Flight gauge (only shown in Pegasus / Alicorn)
+    this.gaugeBg = this.add.rectangle(10, 74, 160, 14, 0x222222, 0.8)
+      .setOrigin(0, 0).setScrollFactor(0).setDepth(100).setVisible(false);
+    this.gaugeBar = this.add.rectangle(10, 74, 160, 14, 0x00ccff, 0.9)
+      .setOrigin(0, 0).setScrollFactor(0).setDepth(101).setVisible(false);
+    this.gaugeLabel = this.add.text(10, 90, '비행 게이지', {
+      fontSize: '11px', fill: '#00ccff', fontFamily: 'sans-serif'
+    }).setScrollFactor(0).setDepth(101).setVisible(false);
+
+    // Boss HP bar (hidden initially)
+    this.bossHpBg = this.add.rectangle(GAME_W / 2, GAME_H - 20, 300, 18, 0x330000, 0.9)
+      .setOrigin(0.5, 0.5).setScrollFactor(0).setDepth(100).setVisible(false);
+    this.bossHpBar = this.add.rectangle(GAME_W / 2 - 149, GAME_H - 20, 298, 14, 0xff2200, 0.9)
+      .setOrigin(0, 0.5).setScrollFactor(0).setDepth(101).setVisible(false);
+    this.bossHpText = this.add.text(GAME_W / 2, GAME_H - 20, '100% 완전히 타버린 감자 대왕', {
+      fontSize: '11px', fill: '#ffaa00', fontFamily: 'sans-serif'
+    }).setOrigin(0.5, 0.5).setScrollFactor(0).setDepth(102).setVisible(false);
+
+    // Center message (victory / game over)
+    this.centerMsg = this.add.text(GAME_W / 2, GAME_H / 2, '', {
+      fontSize: '22px', fill: '#ffd700',
+      fontFamily: 'sans-serif', fontStyle: 'bold',
+      stroke: '#000000', strokeThickness: 6,
+      align: 'center', wordWrap: { width: 700 }
+    }).setOrigin(0.5, 0.5).setScrollFactor(0).setDepth(200).setVisible(false);
+
+    this._refreshHUD();
+  }
+
+  // ----------------------------------------------------------
+  _refreshHUD() {
+    // Hearts
+    for (let i = 0; i < 3; i++) {
+      this.heartImages[i].setTexture(i < this.playerHP ? 'heart' : 'heart_empty');
+    }
+    // Score
+    this.scoreText.setText(`Score: ${this.score}%`);
+
+    // State label
+    const stateNames = ['일반', '유니콘', '페가수스', '알리콘'];
+    const stateColHex = ['#ffffff', '#4488ff', '#00ccff', '#ffd700'];
+    this.stateText.setText(`● ${stateNames[this.playerState]}`);
+    this.stateText.setColor(stateColHex[this.playerState]);
+
+    // Flight gauge visibility
+    const showGauge = (this.playerState === STATE.PEGASUS || this.playerState === STATE.ALICORN);
+    this.gaugeBg.setVisible(showGauge);
+    this.gaugeBar.setVisible(showGauge);
+    this.gaugeLabel.setVisible(showGauge);
+
+    if (showGauge) {
+      const ratio = this.playerState === STATE.ALICORN ? 1 : (this.flightGauge / 8);
+      this.gaugeBar.setDisplaySize(Math.max(0, 160 * ratio), 14);
+      if (this.playerState === STATE.ALICORN) {
+        this.gaugeBar.setFillStyle(0xffd700);
+        this.gaugeLabel.setText('비행 게이지 (무한)');
+      } else {
+        this.gaugeBar.setFillStyle(0x00ccff);
+        this.gaugeLabel.setText('비행 게이지');
+      }
+    }
+
+    // Player texture
+    const texMap = ['player_normal','player_unicorn','player_pegasus','player_alicorn'];
+    this.player.setTexture(texMap[this.playerState]);
+
+    // Player tint flash if invincible
+    if (this.isInvincible) {
+      this.player.setAlpha(0.5 + Math.sin(Date.now() * 0.03) * 0.5);
+    } else {
+      this.player.setAlpha(1);
+    }
+  }
+
+  // ----------------------------------------------------------
+  _hitStarBox(player, box) {
+    // Only trigger when hitting from below
+    if (box.getData('hit')) return;
+    if (player.body.velocity.y >= 0) return; // only upward
+    if (player.y > box.y) {
+      box.setData('hit', true);
+      box.setTint(0x888888);
+
+      // Animate box bump
+      this.tweens.add({
+        targets: box, y: box.y - 8, duration: 80,
+        yoyo: true, ease: 'Sine.easeOut'
+      });
+
+      // Drop item or star
+      this._dropFromBox(box.x, box.y);
+    }
+  }
+
+  _dropFromBox(x, y) {
+    const roll = Math.random();
+    let key, type;
+
+    if (roll < 0.10) {          // 10% – Rainbow Wings (Alicorn)
+      key = 'item_rainbow'; type = 'rainbow';
+    } else if (roll < 0.30) {   // 20% – Wings (Pegasus)
+      key = 'item_wings'; type = 'wings';
+    } else if (roll < 0.50) {   // 20% – Horn (Unicorn)
+      key = 'item_horn'; type = 'horn';
+    } else {                    // 50% – 3 stars
+      for (let i = 0; i < 3; i++) {
+        const s = this.stars.create(x + (i - 1) * 18, y - 20, 'star');
+        s.setVelocityY(-180);
+        s.setBounceY(0.4);
+        s.body.setAllowGravity(true);
+      }
+      return;
+    }
+
+    const item = this.items.create(x, y - 20, key);
+    item.setData('type', type);
+    item.setVelocityY(-200);
+    item.setBounceY(0.3);
+  }
+
+  // ----------------------------------------------------------
+  _collectStar(player, star) {
+    star.destroy();
+    this.score += 7;
+    this._refreshHUD();
+    this._floatText(star.x, star.y, '+7%', '#ffee00');
+  }
+
+  _collectItem(player, item) {
+    const type = item.getData('type');
+    item.destroy();
+
+    switch (type) {
+      case 'horn':    this._setState(STATE.UNICORN);  break;
+      case 'wings':   this._setState(STATE.PEGASUS);  break;
+      case 'rainbow': this._setState(STATE.ALICORN);  break;
+    }
+  }
+
+  _setState(newState) {
+    this.playerState = newState;
+    if (newState === STATE.PEGASUS) {
+      // Don't reset gauge if already pegasus
+      if (this.flightGauge <= 0) this.flightGauge = 8;
+    }
+    if (newState === STATE.ALICORN) {
+      this.flightGauge = 8;
+    }
+    this._refreshHUD();
+    // Flash effect
+    this.cameras.main.flash(200, 150, 150, 255);
+  }
+
+  // ----------------------------------------------------------
+  // Enemy interactions
+  _hitEnemy(player, enemy) {
+    if (this.isInvincible || this.gameOver) return;
+    if (enemy.getData('type') !== 'potato') return;
+
+    // Stomp: player falling onto enemy head
+    const playerBottom = player.y + player.height / 2;
+    const enemyTop     = enemy.y  - enemy.height / 2;
+
+    if (player.body.velocity.y > 0 && playerBottom < enemy.y + 10) {
+      // Stomp success
+      enemy.destroy();
+      player.setVelocityY(-300);
+      this.score += 7;
+      this._refreshHUD();
+      this._floatText(enemy.x, enemy.y, 'STOMP! +7%', '#ff8800');
+    } else {
+      // Alicorn: invincible
+      if (this.playerState === STATE.ALICORN) {
+        enemy.destroy();
+        this._floatText(enemy.x, enemy.y, '알리콘 격파!', '#ffd700');
+        return;
+      }
+      this._takeDamage(player);
+    }
+  }
+
+  _hitPumpkin(player, pumpkin) {
+    if (this.isInvincible || this.gameOver) return;
+
+    // Unicorn/Alicorn dash-destroy (not stomping from above)
+    const playerBottom = player.y + player.height / 2;
+    if ((this.playerState === STATE.UNICORN || this.playerState === STATE.ALICORN)
+        && playerBottom > pumpkin.y - pumpkin.height / 2 + 4) {
+      pumpkin.destroy();
+      this._floatText(pumpkin.x, pumpkin.y, '대시 격파!', '#4488ff');
+      return;
+    }
+
+    this._takeDamage(player);
+  }
+
+  _hitLightning(player, lightning) {
+    if (this.isInvincible || this.gameOver) return;
+    if (this.playerState === STATE.ALICORN) { lightning.destroy(); return; }
+    lightning.destroy();
+    this._takeDamage(player);
+  }
+
+  _hitMagpie(player, magpie) {
+    if (this.gameOver) return;
+    const playerBottom = player.y + player.height / 2;
+    const magpieTop    = magpie.y - magpie.height / 2;
+
+    // Stomp magpie
+    if (player.body.velocity.y > 0 && playerBottom < magpie.y + 10) {
+      magpie.destroy();
+      player.setVelocityY(-260);
+      this._floatText(magpie.x, magpie.y, '까치 격파!', '#88ff00');
+      return;
+    }
+
+    // Alicorn destroys it
+    if (this.playerState === STATE.ALICORN) {
+      magpie.destroy();
+      return;
+    }
+
+    // Percent theft – no HP damage
+    if (!magpie.getData('stealing')) {
+      magpie.setData('stealing', true);
+      this.score = Math.max(0, this.score - 100);
+      this._refreshHUD();
+      this._floatText(magpie.x, magpie.y - 20, '-100%!!', '#ff2200');
+      // magpie flies away after stealing
+      this.time.delayedCall(400, () => {
+        if (magpie && magpie.active) {
+          magpie.setVelocity(200, -300);
+          this.time.delayedCall(1000, () => { if (magpie.active) magpie.destroy(); });
+        }
+      });
+    }
+  }
+
+  _hitBossProj(player, proj) {
+    if (this.isInvincible || this.gameOver) return;
+    if (this.playerState === STATE.ALICORN) { proj.destroy(); return; }
+    proj.destroy();
+    this._takeDamage(player);
+  }
+
+  // ----------------------------------------------------------
+  _takeDamage(player) {
+    if (this.isInvincible) return;
+
+    // Revert state (unless already Normal, Alicorn invincible handled above)
+    if (this.playerState !== STATE.NORMAL) {
+      this._setState(STATE.NORMAL);
+      // Brief immunity after losing state
+      this._grantInvincibility(1000);
+      return;
+    }
+
+    this.playerHP--;
+    this._refreshHUD();
+    this.cameras.main.shake(200, 0.015);
+    this.cameras.main.flash(150, 255, 0, 0);
+
+    if (this.playerHP <= 0) {
+      this._doGameOver();
+    } else {
+      this._grantInvincibility(1500);
+    }
+  }
+
+  _grantInvincibility(ms) {
+    this.isInvincible = true;
+    this.time.delayedCall(ms, () => {
+      this.isInvincible = false;
+      this.player.setAlpha(1);
+    });
+  }
+
+  // ----------------------------------------------------------
+  _doGameOver() {
+    this.gameOver = true;
+    this.physics.pause();
+    this.centerMsg.setText('게임 오버\n\n다시 도전해보세요!');
+    this.centerMsg.setColor('#ff4444');
+    this.centerMsg.setVisible(true);
+
+    // Restart on any key
+    this.time.delayedCall(2000, () => {
+      this.input.keyboard.once('keydown', () => this.scene.restart());
+    });
+  }
+
+  // ----------------------------------------------------------
+  _doVictory() {
+    this.gameWon = true;
+    this.score += 1000;
+    this._refreshHUD();
+
+    // Spawn rainbow gate
+    const gate = this.add.image(2850, GAME_H - 120, 'gate');
+    gate.setDepth(10);
+
+    this.physics.pause();
+    this.centerMsg.setText(
+      `최종 스코어: ${this.score}% 달성!\n스테이지 클리어!`
+    );
+    this.centerMsg.setColor('#ffd700');
+    this.centerMsg.setFontSize('28px');
+    this.centerMsg.setVisible(true);
+
+    this.tweens.add({
+      targets: this.centerMsg,
+      scaleX: 1.08, scaleY: 1.08,
+      duration: 600, yoyo: true, repeat: -1,
+      ease: 'Sine.easeInOut'
+    });
+
+    // Touch gate to show message (already shown above)
+  }
+
+  // ----------------------------------------------------------
+  _floatText(x, y, msg, color) {
+    const t = this.add.text(x, y, msg, {
+      fontSize: '14px', fill: color || '#ffffff',
+      fontFamily: 'sans-serif', fontStyle: 'bold',
+      stroke: '#000000', strokeThickness: 4
+    }).setDepth(150);
+    this.tweens.add({
+      targets: t, y: y - 50, alpha: 0, duration: 900,
+      ease: 'Cubic.easeOut',
+      onComplete: () => t.destroy()
+    });
+  }
+
+  // ----------------------------------------------------------
+  _spawnCloud() {
+    if (this.gameOver || this.gameWon) return;
+    const x = this.player.x + Phaser.Math.Between(300, 700);
+    if (x > WORLD_WIDTH - 100 || x < 100) return;
+    const y = Phaser.Math.Between(60, 220);
+    const c = this.clouds.create(x, y, 'cloud');
+    c.setData('type', 'cloud');
+    c.body.setAllowGravity(false);
+    c.setVelocityX(-20);
+    c.setData('shootTimer', 0);
+    // Lightning interval
+    c.setData('lightningDelay', Phaser.Math.Between(3000, 6000));
+    this.time.addEvent({
+      delay: c.getData('lightningDelay'),
+      callback: () => { if (c.active) this._shootLightning(c); },
+      callbackScope: this,
+      loop: true
+    });
+  }
+
+  _shootLightning(cloud) {
+    if (!cloud.active || this.gameOver || this.gameWon) return;
+    const l = this.lightnings.create(cloud.x, cloud.y + 20, 'lightning');
+    l.setVelocityY(300);
+    l.body.setAllowGravity(false);
+    this.time.delayedCall(2000, () => { if (l.active) l.destroy(); });
+  }
+
+  // ----------------------------------------------------------
+  _spawnMagpie() {
+    if (this.gameOver || this.gameWon) return;
+    const x = this.player.x + Phaser.Math.Between(300, 500) * (Math.random() < 0.5 ? 1 : -1);
+    if (x < 50 || x > WORLD_WIDTH - 50) return;
+    const m = this.magpies.create(
+      Phaser.Math.Clamp(x, 50, WORLD_WIDTH - 50),
+      Phaser.Math.Between(60, 180),
+      'magpie'
+    );
+    m.body.setAllowGravity(false);
+    m.setData('diving', false);
+    m.setData('diveTimer', Phaser.Math.Between(2000, 4000));
+  }
+
+  // ----------------------------------------------------------
+  // BOSS
+  _spawnBoss() {
+    this.bossSpawned = true;
+    this.boss = this.physics.add.sprite(2900, GAME_H - 100, 'boss');
+    this.boss.setScale(1.0);
+    this.boss.body.setSize(70, 60);
+    this.boss.setCollideWorldBounds(true);
+    this.physics.add.collider(this.boss, this.platforms);
+
+    // Boss HP bar visible
+    this.bossHpBg.setVisible(true);
+    this.bossHpBar.setVisible(true);
+    this.bossHpText.setVisible(true);
+
+    // Boss overlap: stomp to damage
+    this.physics.add.overlap(this.player, this.boss, this._hitBoss, null, this);
+
+    // Boss AI timer
+    this.bossAttackTimer = this.time.addEvent({
+      delay: 2000, callback: this._bossAI, callbackScope: this, loop: true
+    });
+  }
+
+  _hitBoss(player, boss) {
+    if (!boss.active || this.gameOver || this.gameWon) return;
+    const playerBottom = player.y + player.height / 2;
+
+    if (player.body.velocity.y > 0 && playerBottom < boss.y) {
+      // Stomp boss
+      if (this.isInvincible) return; // still counts but no double stun
+      this.bossHP--;
+      player.setVelocityY(-320);
+      this._grantInvincibility(600);
+      this._floatText(boss.x, boss.y - 50, `STOMP! (${this.bossHP} HP left)`, '#ff8800');
+      this._updateBossHpBar();
+      this.cameras.main.shake(150, 0.01);
+
+      if (this.bossHP <= 0) {
+        this._defeatBoss();
+      }
+    } else {
+      // Boss damages player
+      if (this.playerState === STATE.ALICORN) return;
+      this._takeDamage(player);
+    }
+  }
+
+  _updateBossHpBar() {
+    const ratio = this.bossHP / 3;
+    this.bossHpBar.setDisplaySize(Math.max(0, 298 * ratio), 14);
+  }
+
+  _bossAI() {
+    if (!this.boss || !this.boss.active || this.gameOver || this.gameWon) return;
+
+    const roll = Math.random();
+    if (roll < 0.5) {
+      this._bossQuake();
+    } else {
+      this._bossShoot();
+    }
+  }
+
+  _bossQuake() {
+    // Jump and slam
+    this.boss.setVelocityY(-400);
+    this.time.delayedCall(600, () => {
+      if (!this.boss || !this.boss.active) return;
+      this.cameras.main.shake(300, 0.02);
+      // Stun player if on ground
+      if (this.player.body.blocked.down) {
+        this.isStunned = true;
+        this.player.setVelocity(0, 0);
+        this._floatText(this.player.x, this.player.y - 30, '기절!', '#ffaaaa');
+        this.time.delayedCall(1000, () => { this.isStunned = false; });
+      }
+    });
+  }
+
+  _bossShoot() {
+    if (!this.boss || !this.boss.active) return;
+    const dirX = this.player.x < this.boss.x ? -1 : 1;
+    const proj = this.bossProjs.create(this.boss.x, this.boss.y, 'boss_proj');
+    proj.body.setAllowGravity(false);
+    proj.setVelocityX(dirX * 280);
+    this.time.delayedCall(3000, () => { if (proj.active) proj.destroy(); });
+  }
+
+  _defeatBoss() {
+    this.boss.destroy();
+    if (this.bossAttackTimer) this.bossAttackTimer.destroy();
+    this.bossHpBg.setVisible(false);
+    this.bossHpBar.setVisible(false);
+    this.bossHpText.setVisible(false);
+    this._doVictory();
+  }
+
+  // ----------------------------------------------------------
+  update(time, delta) {
+    if (this.gameOver || this.gameWon) return;
+
+    const dt = delta / 1000; // seconds
+    const onGround = this.player.body.blocked.down;
+
+    // ---- Fell into pit ----
+    if (this.player.y > GAME_H + 50) {
+      this._doGameOver();
+      return;
+    }
+
+    // ---- Spawn boss when player approaches ----
+    if (!this.bossSpawned && this.player.x > 2600) {
+      this._spawnBoss();
+    }
+
+    // ---- Player movement ----
+    if (!this.isStunned) {
+      if (this.cursors.left.isDown) {
+        this.player.setVelocityX(-180);
+        this.player.setFlipX(true);
+      } else if (this.cursors.right.isDown) {
+        this.player.setVelocityX(180);
+        this.player.setFlipX(false);
+      } else {
+        this.player.setVelocityX(0);
+      }
+    }
+
+    // ---- Jump / Flight ----
+    const jumpPressed = Phaser.Input.Keyboard.JustDown(this.cursors.up)
+                     || Phaser.Input.Keyboard.JustDown(this.spaceKey);
+    const jumpHeld    = this.cursors.up.isDown || this.spaceKey.isDown;
+
+    if (jumpPressed && onGround) {
+      this.player.setVelocityY(-480);
+    }
+
+    // Pegasus flight
+    if (this.playerState === STATE.PEGASUS || this.playerState === STATE.ALICORN) {
+      const infinite = this.playerState === STATE.ALICORN;
+
+      if (jumpHeld && !onGround) {
+        if (infinite || this.flightGauge > 0) {
+          this.isFlying = true;
+          if (!infinite) {
+            this.flightGauge = Math.max(0, this.flightGauge - dt);
+          }
+          // Override gravity with upward force
+          const vy = this.player.body.velocity.y;
+          if (vy > -150) {
+            this.player.setVelocityY(Math.max(-150, vy - 600 * dt));
+          }
+        }
+      } else {
+        this.isFlying = false;
+      }
+
+      // Gauge regen on ground
+      if (onGround && !infinite) {
+        this.flightGauge = Math.min(8, this.flightGauge + dt * 1.2);
+      }
+    }
+
+    // ---- Unicorn / Alicorn magnet effect ----
+    if (this.playerState === STATE.UNICORN || this.playerState === STATE.ALICORN) {
+      this.stars.getChildren().forEach(star => {
+        if (!star.active) return;
+        const dist = Phaser.Math.Distance.Between(
+          this.player.x, this.player.y, star.x, star.y
+        );
+        if (dist < 200) {
+          const angle = Phaser.Math.Angle.Between(star.x, star.y, this.player.x, this.player.y);
+          const speed = Phaser.Math.Linear(300, 80, dist / 200);
+          star.setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed);
+        }
+      });
+    }
+
+    // ---- Magpie AI ----
+    this.magpies.getChildren().forEach(magpie => {
+      if (!magpie.active) return;
+      const dist = Phaser.Math.Distance.Between(
+        this.player.x, this.player.y, magpie.x, magpie.y
+      );
+
+      if (!magpie.getData('diving') && dist < 350) {
+        magpie.setData('diving', true);
+        const angle = Phaser.Math.Angle.Between(magpie.x, magpie.y, this.player.x, this.player.y);
+        magpie.setVelocity(Math.cos(angle) * 220, Math.sin(angle) * 220);
+        this.time.delayedCall(1500, () => {
+          if (magpie.active) {
+            magpie.setData('diving', false);
+            magpie.setVelocity(Phaser.Math.Between(-50, 50), -100);
+          }
+        });
+      }
+    });
+
+    // ---- Raw potato patrol ----
+    this.enemies.getChildren().forEach(enemy => {
+      if (!enemy.active || enemy.getData('type') !== 'potato') return;
+      // Reverse at world limits or near pits (simple: reverse at x limits)
+      if (enemy.x < 20 || enemy.x > WORLD_WIDTH - 20
+          || enemy.body.blocked.right || enemy.body.blocked.left) {
+        const dir = enemy.getData('dir') * -1;
+        enemy.setData('dir', dir);
+        enemy.setVelocityX(dir * 60);
+        enemy.setFlipX(dir < 0);
+      }
+    });
+
+    // ---- Boss movement (patrol between x=2750 and x=3100) ----
+    if (this.boss && this.boss.active) {
+      if (this.boss.x < 2750) {
+        this.boss.setVelocityX(80);
+        this.boss.setFlipX(false);
+      } else if (this.boss.x > 3100) {
+        this.boss.setVelocityX(-80);
+        this.boss.setFlipX(true);
+      }
+    }
+
+    // ---- HUD refresh ----
+    this._refreshHUD();
+  }
+}
+
+// ============================================================
+// GAME CONFIG & LAUNCH
+// ============================================================
+const config = {
+  type: Phaser.AUTO,
+  width: GAME_W,
+  height: GAME_H,
+  backgroundColor: '#1a1a3a',
+  parent: 'game-container',
+  physics: {
+    default: 'arcade',
+    arcade: {
+      gravity: { y: 700 },
+      debug: false
+    }
+  },
+  scene: [BootScene, GameScene]
+};
+
+const game = new Phaser.Game(config);
+</script>
+</body>
+</html>
