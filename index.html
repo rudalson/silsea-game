@@ -12,17 +12,25 @@
       justify-content: center;
       align-items: center;
       min-height: 100vh;
+      width: 100vw;
       font-family: 'Segoe UI', sans-serif;
       overflow: hidden;
     }
     #game-container {
       position: relative;
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+    canvas {
+      display: block;
       box-shadow: 0 0 60px rgba(100, 50, 255, 0.5),
                   0 0 120px rgba(50, 100, 255, 0.3);
       border-radius: 4px;
       border: 2px solid rgba(150, 100, 255, 0.4);
     }
-    canvas { display: block; }
   </style>
 </head>
 <body>
@@ -68,6 +76,25 @@ function makeTexture(scene, key, w, h, fn) {
 class BootScene extends Phaser.Scene {
   constructor() { super('Boot'); }
 
+  preload() {
+    this.load.image('silsea_sprite_raw', 'assets/silsea_sprite.jpg');
+    this.load.audio('basic_bgm', 'assets/Sounds/basic_bgm.mp3');
+    
+    // Load Kenney spritesheets (XML format)!
+    this.load.atlasXML('tiles', 'assets/Spritesheets/spritesheet-tiles-default.png', 'assets/Spritesheets/spritesheet-tiles-default.xml');
+    this.load.atlasXML('enemies', 'assets/Spritesheets/spritesheet-enemies-default.png', 'assets/Spritesheets/spritesheet-enemies-default.xml');
+    
+    // Load SFX files!
+    this.load.audio('sfx_jump', 'assets/Sounds/sfx_jump.ogg');
+    this.load.audio('sfx_magic', 'assets/Sounds/sfx_magic.ogg');
+    this.load.audio('sfx_coin', 'assets/Sounds/sfx_coin.ogg');
+    this.load.audio('sfx_bump', 'assets/Sounds/sfx_bump.ogg');
+    this.load.audio('sfx_hurt', 'assets/Sounds/sfx_hurt.ogg');
+    this.load.audio('sfx_disappear', 'assets/Sounds/sfx_disappear.ogg');
+    this.load.audio('sfx_gem', 'assets/Sounds/sfx_gem.ogg');
+    this.load.audio('sfx_throw', 'assets/Sounds/sfx_throw.ogg');
+  }
+
   create() {
     // ---- background sky gradient ----
     makeTexture(this, 'bg', GAME_W, GAME_H, (g) => {
@@ -81,229 +108,155 @@ class BootScene extends Phaser.Scene {
       }
     });
 
-    // ---- ground tile ----
-    makeTexture(this, 'ground', 64, 32, (g) => {
-      g.fillStyle(0x5a3a1a);
-      g.fillRect(0, 0, 64, 32);
-      g.fillStyle(0x7cba3c);
-      g.fillRect(0, 0, 64, 10);
-      g.lineStyle(1, 0x3a2a0a);
-      for (let x = 0; x < 64; x += 16) {
-        g.beginPath(); g.moveTo(x, 10); g.lineTo(x, 32); g.strokePath();
+    // ---- Process the sprite sheet raw image to clean background ----
+    const img = this.textures.get('silsea_sprite_raw').getSourceImage();
+    const canvas = document.createElement('canvas');
+    canvas.width = img.width;
+    canvas.height = img.height;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+
+    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imgData.data;
+
+    // Process pixels to remove grey checkerboard background
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+
+      const diffRG = Math.abs(r - g);
+      const diffGB = Math.abs(g - b);
+      const diffRB = Math.abs(r - b);
+
+      // Precise color ranges of the background checkerboard squares in JPEG (with compression chroma noise)
+      const isBgColor1 = (r >= 200 && r <= 228) && (g >= 208 && g <= 234) && (b >= 215 && b <= 242);
+      const isBgColor2 = (r >= 175 && r <= 198) && (g >= 182 && g <= 206) && (b >= 188 && b <= 212);
+      
+      // Generic checkerboard match for borders/transitional compression noise
+      const isGrey = diffRG < 16 && diffGB < 16 && diffRB < 18;
+      const isBgRange = r >= 165 && r <= 232;
+
+      if (isBgColor1 || isBgColor2 || (isGrey && isBgRange)) {
+        data[i + 3] = 0; // Transparent
       }
+    }
+    ctx.putImageData(imgData, 0, 0);
+
+    // Add cleaned texture
+    this.textures.addCanvas('silsea_sprite_clean', canvas);
+
+    // Add frames manually to avoid labels and preserve perfect proportions (Uniform 128x136)
+    const texture = this.textures.get('silsea_sprite_clean');
+    
+    // RUN: Row 1, cols 0..7. y: 52..188 (h: 136)
+    for (let i = 0; i < 8; i++) {
+      texture.add('run_' + i, 0, i * 128, 52, 128, 136);
+    }
+    // IDLE: Row 2, cols 0..4. y: 214..350 (h: 136)
+    for (let i = 0; i < 5; i++) {
+      texture.add('idle_' + i, 0, i * 128, 214, 128, 136);
+    }
+    // JUMP: Row 2, cols 5..7. y: 214..350 (h: 136)
+    for (let i = 0; i < 3; i++) {
+      texture.add('jump_' + i, 0, (5 + i) * 128, 214, 128, 136);
+    }
+    // WALK: Row 3, cols 0..5. y: 396..532 (h: 136)
+    for (let i = 0; i < 6; i++) {
+      texture.add('walk_' + i, 0, i * 128, 396, 128, 136);
+    }
+
+    // Create Animations
+    this.anims.create({
+      key: 'run',
+      frames: [
+        { key: 'silsea_sprite_clean', frame: 'run_0' },
+        { key: 'silsea_sprite_clean', frame: 'run_1' },
+        { key: 'silsea_sprite_clean', frame: 'run_2' },
+        { key: 'silsea_sprite_clean', frame: 'run_3' },
+        { key: 'silsea_sprite_clean', frame: 'run_4' },
+        { key: 'silsea_sprite_clean', frame: 'run_5' },
+        { key: 'silsea_sprite_clean', frame: 'run_6' },
+        { key: 'silsea_sprite_clean', frame: 'run_7' }
+      ],
+      frameRate: 12,
+      repeat: -1
     });
 
-    // ---- platform tile ----
-    makeTexture(this, 'platform', 64, 20, (g) => {
-      g.fillStyle(0x8b5e3c);
-      g.fillRect(0, 0, 64, 20);
-      g.fillStyle(0xa08060);
-      g.fillRect(0, 0, 64, 6);
-      g.lineStyle(1, 0x5a3a1a);
-      for (let x = 0; x < 64; x += 16) {
-        g.beginPath(); g.moveTo(x, 6); g.lineTo(x, 20); g.strokePath();
-      }
+    this.anims.create({
+      key: 'idle',
+      frames: [
+        { key: 'silsea_sprite_clean', frame: 'idle_0' },
+        { key: 'silsea_sprite_clean', frame: 'idle_1' },
+        { key: 'silsea_sprite_clean', frame: 'idle_2' },
+        { key: 'silsea_sprite_clean', frame: 'idle_3' },
+        { key: 'silsea_sprite_clean', frame: 'idle_4' }
+      ],
+      frameRate: 6,
+      repeat: -1
     });
 
-    // ---- player states ----
+    this.anims.create({
+      key: 'jump',
+      frames: [
+        { key: 'silsea_sprite_clean', frame: 'jump_0' },
+        { key: 'silsea_sprite_clean', frame: 'jump_1' },
+        { key: 'silsea_sprite_clean', frame: 'jump_2' }
+      ],
+      frameRate: 6,
+      repeat: 0
+    });
+
+    this.anims.create({
+      key: 'walk',
+      frames: [
+        { key: 'silsea_sprite_clean', frame: 'walk_0' },
+        { key: 'silsea_sprite_clean', frame: 'walk_1' },
+        { key: 'silsea_sprite_clean', frame: 'walk_2' },
+        { key: 'silsea_sprite_clean', frame: 'walk_3' },
+        { key: 'silsea_sprite_clean', frame: 'walk_4' },
+        { key: 'silsea_sprite_clean', frame: 'walk_5' }
+      ],
+      frameRate: 8,
+      repeat: -1
+    });
+
+    // Create Animations for Enemies
+    this.anims.create({
+      key: 'snail_walk',
+      frames: [
+        { key: 'enemies', frame: 'snail_walk_a' },
+        { key: 'enemies', frame: 'snail_walk_b' }
+      ],
+      frameRate: 6,
+      repeat: -1
+    });
+
+    this.anims.create({
+      key: 'bee_fly',
+      frames: [
+        { key: 'enemies', frame: 'bee_a' },
+        { key: 'enemies', frame: 'bee_b' }
+      ],
+      frameRate: 8,
+      repeat: -1
+    });
+
+    this.anims.create({
+      key: 'boss_walk',
+      frames: [
+        { key: 'enemies', frame: 'slime_block_walk_a' },
+        { key: 'enemies', frame: 'slime_block_walk_b' }
+      ],
+      frameRate: 4,
+      repeat: -1
+    });
+
+    // Keep procedural player textures just in case
     this._makePlayer('player_normal',  STATE.NORMAL);
     this._makePlayer('player_unicorn', STATE.UNICORN);
     this._makePlayer('player_pegasus', STATE.PEGASUS);
     this._makePlayer('player_alicorn', STATE.ALICORN);
-
-    // ---- star box ----
-    makeTexture(this, 'starbox', 32, 32, (g) => {
-      g.fillStyle(0xf0c040);
-      g.fillRect(0, 0, 32, 32);
-      g.lineStyle(3, 0xd08000);
-      g.strokeRect(0, 0, 32, 32);
-      g.fillStyle(0xffffff);
-      // simple star shape via polygon
-      g.fillTriangle(16, 4, 10, 22, 28, 10);
-      g.fillTriangle(16, 4, 22, 22, 4, 10);
-    });
-
-    // ---- star item ----
-    makeTexture(this, 'star', 16, 16, (g) => {
-      g.fillStyle(0xffee00);
-      g.fillTriangle(8, 0, 4, 12, 16, 5);
-      g.fillTriangle(8, 0, 12, 12, 0, 5);
-    });
-
-    // ---- horn item (unicorn) ----
-    makeTexture(this, 'item_horn', 24, 24, (g) => {
-      g.fillStyle(0x4488ff);
-      g.fillTriangle(12, 0, 4, 24, 20, 24);
-      g.lineStyle(2, 0x0044aa);
-      g.strokeTriangle(12, 0, 4, 24, 20, 24);
-    });
-
-    // ---- wings item (pegasus) ----
-    makeTexture(this, 'item_wings', 32, 24, (g) => {
-      g.fillStyle(0x00ccff);
-      g.fillEllipse(10, 12, 20, 14);
-      g.fillEllipse(22, 12, 20, 14);
-      g.fillStyle(0x0088cc);
-      g.fillEllipse(16, 14, 12, 8);
-    });
-
-    // ---- rainbow wings item (alicorn) ----
-    makeTexture(this, 'item_rainbow', 32, 24, (g) => {
-      const cols = [0xff0000, 0xff8800, 0xffff00, 0x00ff00, 0x0088ff, 0x8800ff];
-      for (let i = 0; i < 6; i++) {
-        g.fillStyle(cols[i]);
-        g.fillRect(i * 5, 6, 5, 18);
-      }
-      g.fillStyle(0xffd700);
-      g.fillEllipse(16, 6, 24, 10);
-    });
-
-    // ---- raw potato (enemy) ----
-    makeTexture(this, 'potato', 32, 28, (g) => {
-      g.fillStyle(0xc8a060);
-      g.fillEllipse(16, 16, 30, 24);
-      g.fillStyle(0xa07840);
-      g.fillCircle(8, 12, 3);
-      g.fillCircle(20, 8, 2);
-      g.fillCircle(24, 18, 3);
-      // tiny eyes
-      g.fillStyle(0x000000);
-      g.fillCircle(10, 10, 2);
-      g.fillCircle(22, 10, 2);
-    });
-
-    // ---- thorny pumpkin ----
-    makeTexture(this, 'pumpkin', 36, 36, (g) => {
-      g.fillStyle(0xff6600);
-      g.fillEllipse(18, 22, 32, 26);
-      g.fillStyle(0x228800);
-      g.fillRect(15, 2, 6, 12);
-      // thorns
-      g.fillStyle(0xff2200);
-      for (let i = 0; i < 8; i++) {
-        const a = (i / 8) * Math.PI * 2;
-        const tx = 18 + Math.cos(a) * 17;
-        const ty = 22 + Math.sin(a) * 14;
-        g.fillTriangle(tx, ty, tx - 3, ty + 5, tx + 3, ty + 5);
-      }
-      g.fillStyle(0x000000);
-      g.fillTriangle(12, 20, 8, 26, 16, 26);
-      g.fillTriangle(24, 20, 20, 26, 28, 26);
-    });
-
-    // ---- dark cloud ----
-    makeTexture(this, 'cloud', 64, 40, (g) => {
-      g.fillStyle(0x445566);
-      g.fillCircle(20, 24, 16);
-      g.fillCircle(32, 18, 20);
-      g.fillCircle(46, 24, 14);
-      g.fillRect(8, 24, 50, 14);
-      // lightning bolt decoration
-      g.fillStyle(0xffff00, 0.8);
-      g.fillTriangle(28, 4, 24, 20, 32, 20);
-      g.fillTriangle(36, 20, 30, 36, 38, 36);
-    });
-
-    // ---- lightning bolt projectile ----
-    makeTexture(this, 'lightning', 10, 28, (g) => {
-      g.fillStyle(0xffff00);
-      g.fillTriangle(5, 0, 0, 14, 10, 14);
-      g.fillTriangle(5, 28, 0, 14, 10, 14);
-      g.fillStyle(0xffffff, 0.6);
-      g.fillRect(3, 0, 4, 28);
-    });
-
-    // ---- percent magpie ----
-    makeTexture(this, 'magpie', 36, 28, (g) => {
-      // body
-      g.fillStyle(0x222222);
-      g.fillEllipse(18, 18, 30, 22);
-      // white belly
-      g.fillStyle(0xffffff);
-      g.fillEllipse(22, 20, 14, 12);
-      // wing
-      g.fillStyle(0x111111);
-      g.fillEllipse(10, 14, 18, 10);
-      // beak
-      g.fillStyle(0xff8800);
-      g.fillTriangle(34, 12, 28, 10, 28, 16);
-      // eye
-      g.fillStyle(0xffffff);
-      g.fillCircle(28, 12, 3);
-      g.fillStyle(0x000000);
-      g.fillCircle(29, 12, 2);
-      // % symbol on body
-      g.fillStyle(0xffff00);
-      g.fillCircle(16, 16, 2);
-      g.fillCircle(22, 22, 2);
-      g.lineStyle(2, 0xffff00);
-      g.beginPath(); g.moveTo(22, 14); g.lineTo(14, 24); g.strokePath();
-    });
-
-    // ---- boss: burnt potato king ----
-    makeTexture(this, 'boss', 80, 72, (g) => {
-      // main body
-      g.fillStyle(0x111111);
-      g.fillEllipse(40, 44, 72, 56);
-      // charred texture
-      g.fillStyle(0x222222);
-      g.fillCircle(20, 38, 8);
-      g.fillCircle(55, 30, 10);
-      g.fillCircle(32, 55, 7);
-      // crown
-      g.fillStyle(0x3a0000);
-      g.fillRect(18, 8, 44, 14);
-      g.fillTriangle(18, 8, 24, 0, 30, 8);
-      g.fillTriangle(34, 8, 40, 0, 46, 8);
-      g.fillTriangle(50, 8, 56, 0, 62, 8);
-      // glowing evil eyes
-      g.fillStyle(0xff2200);
-      g.fillCircle(28, 36, 8);
-      g.fillCircle(52, 36, 8);
-      g.fillStyle(0xff6600);
-      g.fillCircle(28, 36, 4);
-      g.fillCircle(52, 36, 4);
-      // angry mouth
-      g.lineStyle(3, 0xff2200);
-      g.beginPath();
-      g.moveTo(24, 54); g.lineTo(28, 60); g.lineTo(40, 56); g.lineTo(52, 60); g.lineTo(56, 54);
-      g.strokePath();
-    });
-
-    // ---- boss projectile ----
-    makeTexture(this, 'boss_proj', 18, 14, (g) => {
-      g.fillStyle(0x111111);
-      g.fillEllipse(9, 7, 18, 14);
-      g.fillStyle(0xff2200, 0.6);
-      g.fillCircle(9, 7, 5);
-    });
-
-    // ---- heart UI ----
-    makeTexture(this, 'heart', 20, 18, (g) => {
-      g.fillStyle(0xff2244);
-      g.fillCircle(6, 6, 6);
-      g.fillCircle(14, 6, 6);
-      g.fillTriangle(0, 8, 10, 20, 20, 8);
-    });
-
-    // ---- empty heart ----
-    makeTexture(this, 'heart_empty', 20, 18, (g) => {
-      g.lineStyle(2, 0x884466);
-      g.strokeCircle(6, 6, 6);
-      g.strokeCircle(14, 6, 6);
-      g.strokeTriangle(0, 8, 10, 20, 20, 8);
-    });
-
-    // ---- rainbow gate ----
-    makeTexture(this, 'gate', 80, 120, (g) => {
-      const cols = [0xff0000, 0xff7700, 0xffff00, 0x00ff00, 0x0088ff, 0x8800ff];
-      cols.forEach((c, i) => {
-        g.lineStyle(6, c, 0.9);
-        g.strokeRect(i * 5 + 3, i * 5 + 3, 80 - i * 10 - 6, 120 - i * 10 - 6);
-      });
-      g.fillStyle(0xffffff, 0.15);
-      g.fillRect(10, 10, 60, 100);
-    });
 
     // ---- magnet effect ring ----
     makeTexture(this, 'magnet_ring', 400, 400, (g) => {
@@ -412,10 +365,11 @@ class GameScene extends Phaser.Scene {
     this._buildLevel();
 
     // ---- player ----
-    this.player = this.physics.add.sprite(80, 400, 'player_normal');
+    this.player = this.physics.add.sprite(80, 400, 'silsea_sprite_clean', 'idle_0');
+    this.player.setScale(0.5);
     this.player.setCollideWorldBounds(true);
-    this.player.body.setSize(20, 30);
-    this.player.body.setOffset(4, 6);
+    this.player.body.setSize(80, 115);
+    this.player.body.setOffset(24, 12);
 
     // ---- camera ----
     this.cameras.main.setBounds(0, 0, WORLD_WIDTH, GAME_H);
@@ -453,12 +407,28 @@ class GameScene extends Phaser.Scene {
     this.time.addEvent({ delay: 8000, callback: this._spawnMagpie, callbackScope: this, loop: true });
     // Initial clouds
     for (let i = 0; i < 5; i++) this._spawnCloud();
+
+    // ---- play BGM ----
+    if (this.sound.get('basic_bgm')) {
+      this.bgm = this.sound.get('basic_bgm');
+      if (!this.bgm.isPlaying) {
+        this.bgm.play();
+      }
+    } else {
+      this.bgm = this.sound.add('basic_bgm', { loop: true, volume: 0.4 });
+      this.bgm.play();
+    }
+    this.sound.once('unlocked', () => {
+      if (this.bgm && !this.bgm.isPlaying) {
+        this.bgm.play();
+      }
+    });
   }
 
   // ----------------------------------------------------------
   _buildLevel() {
     // Ground slabs
-    const groundY = GAME_H - 16; // top of ground row
+    const groundY = GAME_H - 32; // top of ground row
     // Main ground – leave a few pits
     const groundSegments = [
       [0,    800],
@@ -468,7 +438,7 @@ class GameScene extends Phaser.Scene {
     ];
     groundSegments.forEach(([start, end]) => {
       for (let x = start; x < end; x += 64) {
-        const tile = this.platforms.create(x + 32, groundY, 'ground');
+        const tile = this.platforms.create(x + 32, groundY, 'tiles', 'terrain_grass_block');
         tile.refreshBody();
       }
     });
@@ -484,7 +454,11 @@ class GameScene extends Phaser.Scene {
     ];
     plats.forEach(([x, y, tiles]) => {
       for (let i = 0; i < tiles; i++) {
-        const t = this.platforms.create(x + i * 64 + 32, y, 'platform');
+        let frameName = 'terrain_grass_horizontal_middle';
+        if (i === 0) frameName = 'terrain_grass_horizontal_left';
+        else if (i === tiles - 1) frameName = 'terrain_grass_horizontal_right';
+        
+        const t = this.platforms.create(x + i * 64 + 32, y, 'tiles', frameName);
         t.refreshBody();
       }
     });
@@ -496,25 +470,29 @@ class GameScene extends Phaser.Scene {
       [2650, 170], [2950, 310],
     ];
     boxes.forEach(([x, y]) => {
-      const b = this.starBoxes.create(x, y, 'starbox');
+      const b = this.starBoxes.create(x, y, 'tiles', 'block_coin');
       b.refreshBody();
       b.setData('hit', false);
     });
 
-    // Enemies – raw potatoes
+    // Enemies – raw potatoes (Snail)
     const potatoXs = [350, 750, 1100, 1450, 1750, 2000, 2350, 2650, 2950];
     potatoXs.forEach(x => {
-      const e = this.enemies.create(x, GAME_H - 60, 'potato');
+      const e = this.enemies.create(x, GAME_H - 64, 'enemies', 'snail_walk_a');
       e.setData('type', 'potato');
       e.setData('dir', 1);
-      e.body.setSize(28, 24);
+      e.body.setSize(44, 40);
+      e.body.setOffset(10, 24);
       e.setVelocityX(60);
+      e.anims.play('snail_walk');
     });
 
-    // Thorny pumpkins
+    // Thorny pumpkins (Spike Slime)
     const pumpkinXs = [500, 1200, 1900, 2500, 2800];
     pumpkinXs.forEach(x => {
-      const p = this.pumpkins.create(x, GAME_H - 50, 'pumpkin');
+      const p = this.pumpkins.create(x, GAME_H - 64, 'enemies', 'slime_spike_rest');
+      p.body.setSize(48, 30);
+      p.body.setOffset(8, 34);
       p.refreshBody();
     });
 
@@ -527,7 +505,7 @@ class GameScene extends Phaser.Scene {
       [2420,280],[2460,280],
     ];
     starPositions.forEach(([x,y]) => {
-      const s = this.stars.create(x, y, 'star');
+      const s = this.stars.create(x, y, 'tiles', 'star');
       s.setBounceY(0.3);
       s.body.setAllowGravity(true);
     });
@@ -549,7 +527,7 @@ class GameScene extends Phaser.Scene {
     // Hearts
     this.heartImages = [];
     for (let i = 0; i < 3; i++) {
-      const h = this.add.image(12 + i * 26, 30, 'heart')
+      const h = this.add.image(12 + i * 26, 30, 'tiles', 'hud_heart')
         .setScrollFactor(0).setDepth(101).setOrigin(0, 0);
       this.heartImages.push(h);
     }
@@ -597,7 +575,7 @@ class GameScene extends Phaser.Scene {
   _refreshHUD() {
     // Hearts
     for (let i = 0; i < 3; i++) {
-      this.heartImages[i].setTexture(i < this.playerHP ? 'heart' : 'heart_empty');
+      this.heartImages[i].setFrame(i < this.playerHP ? 'hud_heart' : 'hud_heart_empty');
     }
     // Score
     this.scoreText.setText(`Score: ${this.score}%`);
@@ -626,9 +604,12 @@ class GameScene extends Phaser.Scene {
       }
     }
 
-    // Player texture
-    const texMap = ['player_normal','player_unicorn','player_pegasus','player_alicorn'];
-    this.player.setTexture(texMap[this.playerState]);
+    // Apply tint based on state (keep silsea_sprite_clean texture)
+    if (this.playerState === STATE.NORMAL) {
+      this.player.clearTint();
+    } else {
+      this.player.setTint(STATE_COLOR[this.playerState]);
+    }
 
     // Player tint flash if invincible
     if (this.isInvincible) {
@@ -645,7 +626,8 @@ class GameScene extends Phaser.Scene {
     if (player.body.velocity.y >= 0) return; // only upward
     if (player.y > box.y) {
       box.setData('hit', true);
-      box.setTint(0x888888);
+      box.setFrame('block_coin_active');
+      this.sound.play('sfx_bump', { volume: 0.5 });
 
       // Animate box bump
       this.tweens.add({
@@ -663,14 +645,15 @@ class GameScene extends Phaser.Scene {
     let key, type;
 
     if (roll < 0.10) {          // 10% – Rainbow Wings (Alicorn)
-      key = 'item_rainbow'; type = 'rainbow';
+      key = 'gem_red'; type = 'rainbow';
     } else if (roll < 0.30) {   // 20% – Wings (Pegasus)
-      key = 'item_wings'; type = 'wings';
+      key = 'gem_green'; type = 'wings';
     } else if (roll < 0.50) {   // 20% – Horn (Unicorn)
-      key = 'item_horn'; type = 'horn';
+      key = 'gem_blue'; type = 'horn';
     } else {                    // 50% – 3 stars
+      this.sound.play('sfx_gem', { volume: 0.4 });
       for (let i = 0; i < 3; i++) {
-        const s = this.stars.create(x + (i - 1) * 18, y - 20, 'star');
+        const s = this.stars.create(x + (i - 1) * 18, y - 20, 'tiles', 'star');
         s.setVelocityY(-180);
         s.setBounceY(0.4);
         s.body.setAllowGravity(true);
@@ -678,7 +661,8 @@ class GameScene extends Phaser.Scene {
       return;
     }
 
-    const item = this.items.create(x, y - 20, key);
+    this.sound.play('sfx_gem', { volume: 0.5 });
+    const item = this.items.create(x, y - 20, 'tiles', key);
     item.setData('type', type);
     item.setVelocityY(-200);
     item.setBounceY(0.3);
@@ -689,12 +673,14 @@ class GameScene extends Phaser.Scene {
     star.destroy();
     this.score += 7;
     this._refreshHUD();
+    this.sound.play('sfx_coin', { volume: 0.5 });
     this._floatText(star.x, star.y, '+7%', '#ffee00');
   }
 
   _collectItem(player, item) {
     const type = item.getData('type');
     item.destroy();
+    this.sound.play('sfx_magic', { volume: 0.6 });
 
     switch (type) {
       case 'horn':    this._setState(STATE.UNICORN);  break;
@@ -730,6 +716,7 @@ class GameScene extends Phaser.Scene {
     if (player.body.velocity.y > 0 && playerBottom < enemy.y + 10) {
       // Stomp success
       enemy.destroy();
+      this.sound.play('sfx_disappear', { volume: 0.6 });
       player.setVelocityY(-300);
       this.score += 7;
       this._refreshHUD();
@@ -738,6 +725,7 @@ class GameScene extends Phaser.Scene {
       // Alicorn: invincible
       if (this.playerState === STATE.ALICORN) {
         enemy.destroy();
+        this.sound.play('sfx_disappear', { volume: 0.6 });
         this._floatText(enemy.x, enemy.y, '알리콘 격파!', '#ffd700');
         return;
       }
@@ -753,6 +741,7 @@ class GameScene extends Phaser.Scene {
     if ((this.playerState === STATE.UNICORN || this.playerState === STATE.ALICORN)
         && playerBottom > pumpkin.y - pumpkin.height / 2 + 4) {
       pumpkin.destroy();
+      this.sound.play('sfx_disappear', { volume: 0.6 });
       this._floatText(pumpkin.x, pumpkin.y, '대시 격파!', '#4488ff');
       return;
     }
@@ -775,6 +764,7 @@ class GameScene extends Phaser.Scene {
     // Stomp magpie
     if (player.body.velocity.y > 0 && playerBottom < magpie.y + 10) {
       magpie.destroy();
+      this.sound.play('sfx_disappear', { volume: 0.6 });
       player.setVelocityY(-260);
       this._floatText(magpie.x, magpie.y, '까치 격파!', '#88ff00');
       return;
@@ -783,6 +773,7 @@ class GameScene extends Phaser.Scene {
     // Alicorn destroys it
     if (this.playerState === STATE.ALICORN) {
       magpie.destroy();
+      this.sound.play('sfx_disappear', { volume: 0.6 });
       return;
     }
 
@@ -812,6 +803,8 @@ class GameScene extends Phaser.Scene {
   // ----------------------------------------------------------
   _takeDamage(player) {
     if (this.isInvincible) return;
+
+    this.sound.play('sfx_hurt', { volume: 0.7 });
 
     // Revert state (unless already Normal, Alicorn invincible handled above)
     if (this.playerState !== STATE.NORMAL) {
@@ -923,6 +916,7 @@ class GameScene extends Phaser.Scene {
     const l = this.lightnings.create(cloud.x, cloud.y + 20, 'lightning');
     l.setVelocityY(300);
     l.body.setAllowGravity(false);
+    this.sound.play('sfx_throw', { volume: 0.3 });
     this.time.delayedCall(2000, () => { if (l.active) l.destroy(); });
   }
 
@@ -934,22 +928,26 @@ class GameScene extends Phaser.Scene {
     const m = this.magpies.create(
       Phaser.Math.Clamp(x, 50, WORLD_WIDTH - 50),
       Phaser.Math.Between(60, 180),
-      'magpie'
+      'enemies', 'bee_a'
     );
     m.body.setAllowGravity(false);
     m.setData('diving', false);
     m.setData('diveTimer', Phaser.Math.Between(2000, 4000));
+    m.anims.play('bee_fly');
   }
 
   // ----------------------------------------------------------
   // BOSS
   _spawnBoss() {
     this.bossSpawned = true;
-    this.boss = this.physics.add.sprite(2900, GAME_H - 100, 'boss');
-    this.boss.setScale(1.0);
-    this.boss.body.setSize(70, 60);
+    this.boss = this.physics.add.sprite(2900, GAME_H - 100, 'enemies', 'slime_block_walk_a');
+    this.boss.setScale(2.5);
+    this.boss.body.setSize(50, 40);
+    this.boss.body.setOffset(7, 24);
+    this.boss.setTint(0x333333); // burnt look!
     this.boss.setCollideWorldBounds(true);
     this.physics.add.collider(this.boss, this.platforms);
+    this.boss.anims.play('boss_walk');
 
     // Boss HP bar visible
     this.bossHpBg.setVisible(true);
@@ -973,6 +971,7 @@ class GameScene extends Phaser.Scene {
       // Stomp boss
       if (this.isInvincible) return; // still counts but no double stun
       this.bossHP--;
+      this.sound.play('sfx_disappear', { volume: 0.7 });
       player.setVelocityY(-320);
       this._grantInvincibility(600);
       this._floatText(boss.x, boss.y - 50, `STOMP! (${this.bossHP} HP left)`, '#ff8800');
@@ -1008,6 +1007,7 @@ class GameScene extends Phaser.Scene {
   _bossQuake() {
     // Jump and slam
     this.boss.setVelocityY(-400);
+    this.sound.play('sfx_throw', { volume: 0.4 });
     this.time.delayedCall(600, () => {
       if (!this.boss || !this.boss.active) return;
       this.cameras.main.shake(300, 0.02);
@@ -1027,6 +1027,7 @@ class GameScene extends Phaser.Scene {
     const proj = this.bossProjs.create(this.boss.x, this.boss.y, 'boss_proj');
     proj.body.setAllowGravity(false);
     proj.setVelocityX(dirX * 280);
+    this.sound.play('sfx_throw', { volume: 0.4 });
     this.time.delayedCall(3000, () => { if (proj.active) proj.destroy(); });
   }
 
@@ -1057,16 +1058,29 @@ class GameScene extends Phaser.Scene {
       this._spawnBoss();
     }
 
-    // ---- Player movement ----
+    // ---- Player movement & animations ----
     if (!this.isStunned) {
       if (this.cursors.left.isDown) {
         this.player.setVelocityX(-180);
         this.player.setFlipX(true);
+        if (onGround) {
+          this.player.anims.play('run', true);
+        }
       } else if (this.cursors.right.isDown) {
         this.player.setVelocityX(180);
         this.player.setFlipX(false);
+        if (onGround) {
+          this.player.anims.play('run', true);
+        }
       } else {
         this.player.setVelocityX(0);
+        if (onGround) {
+          this.player.anims.play('idle', true);
+        }
+      }
+    } else {
+      if (onGround) {
+        this.player.anims.play('idle', true);
       }
     }
 
@@ -1077,6 +1091,11 @@ class GameScene extends Phaser.Scene {
 
     if (jumpPressed && onGround) {
       this.player.setVelocityY(-480);
+      this.sound.play('sfx_jump', { volume: 0.5 });
+    }
+
+    if (!onGround) {
+      this.player.anims.play('jump', true);
     }
 
     // Pegasus flight
@@ -1174,10 +1193,14 @@ class GameScene extends Phaser.Scene {
 // ============================================================
 const config = {
   type: Phaser.AUTO,
-  width: GAME_W,
-  height: GAME_H,
   backgroundColor: '#1a1a3a',
   parent: 'game-container',
+  scale: {
+    mode: Phaser.Scale.FIT,
+    autoCenter: Phaser.Scale.CENTER_BOTH,
+    width: GAME_W,
+    height: GAME_H
+  },
   physics: {
     default: 'arcade',
     arcade: {
