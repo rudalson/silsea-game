@@ -465,7 +465,7 @@ class GameScene extends Phaser.Scene {
     this.stars         = this.physics.add.group({ allowGravity: true });
     this.items         = this.physics.add.group({ allowGravity: true });
     this.enemies       = this.physics.add.group({ allowGravity: true });
-    this.pumpkins      = this.physics.add.group({ allowGravity: true });
+    this.pumpkins      = this.physics.add.staticGroup();
     this.clouds        = this.physics.add.group({ allowGravity: false });
     this.lightnings    = this.physics.add.group({ allowGravity: true });
     this.magpies       = this.physics.add.group({ allowGravity: true });
@@ -490,7 +490,6 @@ class GameScene extends Phaser.Scene {
     // ---- colliders ----
     this.physics.add.collider(this.player, this.platforms);
     this.physics.add.collider(this.enemies, this.platforms);
-    this.physics.add.collider(this.pumpkins, this.platforms);
     this.physics.add.collider(this.stars,   this.platforms);
     this.physics.add.collider(this.items,   this.platforms);
     this.physics.add.collider(this.magpies, this.platforms);
@@ -578,8 +577,7 @@ class GameScene extends Phaser.Scene {
     // Thorny pumpkins (Spike Slime)
     const pumpkinXs = stageData.pumpkins || [];
     pumpkinXs.forEach(x => {
-      const p = this.pumpkins.create(x, GAME_H - 128, 'enemies', 'slime_spike_rest');
-      p.body.setImmovable(true);
+      const p = this.pumpkins.create(x, GAME_H - 96, 'enemies', 'slime_spike_rest');
       p.body.setSize(48, 30);
       p.body.setOffset(8, 34);
     });
