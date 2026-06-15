@@ -264,7 +264,7 @@ class BootScene extends Phaser.Scene {
       g.strokeCircle(200, 200, 200);
     });
 
-    this.scene.start('Game');
+    this.scene.start('Title');
   }
 
   _makePlayer(key, state) {
@@ -315,6 +315,106 @@ class BootScene extends Phaser.Scene {
         g.strokeCircle(14, 18, 20);
       }
     });
+  }
+}
+
+// ============================================================
+// TITLE SCENE – START button before game begins
+// ============================================================
+class TitleScene extends Phaser.Scene {
+  constructor() { super('Title'); }
+
+  create() {
+    // ---- Background ----
+    this.add.tileSprite(0, 0, GAME_W, GAME_H, 'bg').setOrigin(0, 0);
+
+    // ---- Decorative particles (floating stars) ----
+    for (let i = 0; i < 30; i++) {
+      const sx = Phaser.Math.Between(20, GAME_W - 20);
+      const sy = Phaser.Math.Between(20, GAME_H - 20);
+      const star = this.add.image(sx, sy, 'tiles', 'star')
+        .setAlpha(Phaser.Math.FloatBetween(0.15, 0.5))
+        .setScale(Phaser.Math.FloatBetween(0.4, 0.8));
+      this.tweens.add({
+        targets: star,
+        y: sy - Phaser.Math.Between(10, 30),
+        alpha: { from: star.alpha, to: star.alpha * 0.4 },
+        duration: Phaser.Math.Between(2000, 4000),
+        yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+      });
+    }
+
+    // ---- Title text ----
+    const titleStyle = {
+      fontSize: '36px', fill: '#ffd700',
+      fontFamily: 'sans-serif', fontStyle: 'bold',
+      stroke: '#000000', strokeThickness: 8,
+      align: 'center'
+    };
+    const title = this.add.text(GAME_W / 2, 180, '실세아와 구운 감자의\n대모험', titleStyle)
+      .setOrigin(0.5, 0.5);
+    this.tweens.add({
+      targets: title, scaleX: 1.04, scaleY: 1.04,
+      duration: 1200, yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+    });
+
+    // ---- Subtitle ----
+    this.add.text(GAME_W / 2, 270, '🦄 유니콘 · 페가수스 · 알리콘 🌈', {
+      fontSize: '15px', fill: '#aaccff',
+      fontFamily: 'sans-serif', align: 'center'
+    }).setOrigin(0.5, 0.5);
+
+    // ---- Player preview ----
+    const preview = this.add.sprite(GAME_W / 2, 370, 'silsea_sprite_clean', 'idle_0')
+      .setScale(0.7);
+    preview.anims.play('idle');
+
+    // ---- START button ----
+    const btnBg = this.add.rectangle(GAME_W / 2, 490, 220, 56, 0x2244aa, 0.9)
+      .setStrokeStyle(3, 0x4488ff)
+      .setInteractive({ useHandCursor: true });
+
+    const btnText = this.add.text(GAME_W / 2, 490, '▶  START', {
+      fontSize: '24px', fill: '#ffffff',
+      fontFamily: 'sans-serif', fontStyle: 'bold'
+    }).setOrigin(0.5, 0.5);
+
+    // Button pulse animation
+    this.tweens.add({
+      targets: [btnBg, btnText],
+      scaleX: 1.06, scaleY: 1.06,
+      duration: 800, yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+    });
+
+    // Hover effects
+    btnBg.on('pointerover', () => {
+      btnBg.setFillStyle(0x3366cc, 1);
+    });
+    btnBg.on('pointerout', () => {
+      btnBg.setFillStyle(0x2244aa, 0.9);
+    });
+
+    // ---- START click: unlock audio & start game ----
+    btnBg.on('pointerdown', () => {
+      // Unlock audio context via user interaction
+      if (this.sound.locked) {
+        this.sound.unlock();
+      }
+      // Start BGM
+      const bgm = this.sound.add('basic_bgm', { loop: true, volume: 0.4 });
+      bgm.play();
+
+      this.cameras.main.fadeOut(400, 0, 0, 0);
+      this.time.delayedCall(400, () => {
+        this.scene.start('Game');
+      });
+    });
+
+    // ---- Footer ----
+    this.add.text(GAME_W / 2, GAME_H - 24, '방향키: 이동/점프  |  SPACE: 점프', {
+      fontSize: '12px', fill: '#6688aa',
+      fontFamily: 'sans-serif', align: 'center'
+    }).setOrigin(0.5, 0.5);
   }
 }
 
@@ -408,21 +508,7 @@ class GameScene extends Phaser.Scene {
     // Initial clouds
     for (let i = 0; i < 5; i++) this._spawnCloud();
 
-    // ---- play BGM ----
-    if (this.sound.get('basic_bgm')) {
-      this.bgm = this.sound.get('basic_bgm');
-      if (!this.bgm.isPlaying) {
-        this.bgm.play();
-      }
-    } else {
-      this.bgm = this.sound.add('basic_bgm', { loop: true, volume: 0.4 });
-      this.bgm.play();
-    }
-    this.sound.once('unlocked', () => {
-      if (this.bgm && !this.bgm.isPlaying) {
-        this.bgm.play();
-      }
-    });
+    // BGM is already started from TitleScene via user click (Autoplay Policy safe)
   }
 
   // ----------------------------------------------------------
@@ -1208,7 +1294,7 @@ const config = {
       debug: false
     }
   },
-  scene: [BootScene, GameScene]
+  scene: [BootScene, TitleScene, GameScene]
 };
 
 const game = new Phaser.Game(config);
