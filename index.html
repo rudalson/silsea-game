@@ -451,7 +451,27 @@ class GameScene extends Phaser.Scene {
   // ----------------------------------------------------------
   create() {
     const stageData = this.cache.json.get(this.stageKey);
-    this.worldWidth = stageData ? stageData.worldWidth : 3200;
+    if (!stageData) {
+      console.error(`Failed to load stage data for key: ${this.stageKey}`);
+      this.add.rectangle(0, 0, GAME_W, GAME_H, 0x0a0a22).setOrigin(0, 0);
+      this.add.text(GAME_W / 2, GAME_H / 2 - 60, '🚨 오류: 스테이지 데이터를 불러오지 못했습니다.', {
+        fontSize: '22px', fill: '#ff4444', fontFamily: 'sans-serif', fontStyle: 'bold'
+      }).setOrigin(0.5, 0.5);
+
+      this.add.text(GAME_W / 2, GAME_H / 2 + 40, 
+        '원인 1: 브라우저 보안 정책 (CORS)\n' +
+        'HTML 파일을 직접 더블 클릭하여 실행하면 브라우저 보안 정책에 의해 지도가 로드되지 않습니다.\n' +
+        '반드시 로컬 서버 주소(http://localhost:8000/)로 접속하여 게임을 플레이해주세요.\n\n' +
+        '원인 2: 로컬 서버 종료\n' +
+        '서버(node server.js)가 정상적으로 작동 중인지 확인해주세요.', {
+        fontSize: '14px', fill: '#cccccc', align: 'center', fontFamily: 'sans-serif', lineHeight: 1.6
+      }).setOrigin(0.5, 0.5);
+
+      this.physics.pause();
+      this.gameOver = true;
+      return;
+    }
+    this.worldWidth = stageData.worldWidth || 3200;
 
     // ---- scrolling BG ----
     this.add.tileSprite(0, 0, this.worldWidth, GAME_H, 'bg').setOrigin(0, 0).setScrollFactor(0.3);
