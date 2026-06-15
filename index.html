@@ -407,7 +407,7 @@ class TitleScene extends Phaser.Scene {
 
       this.cameras.main.fadeOut(400, 0, 0, 0);
       this.time.delayedCall(400, () => {
-        this.scene.start('Game');
+        this.scene.start('Game', { stageKey: 'stage1' });
       });
     });
 
@@ -426,7 +426,8 @@ class GameScene extends Phaser.Scene {
   constructor() { super('Game'); }
 
   // ----------------------------------------------------------
-  init() {
+  init(data) {
+    this.stageKey     = data && data.stageKey ? data.stageKey : 'stage1';
     this.score        = 0;       // stored as integer percentage
     this.playerHP     = 3;
     this.playerState  = STATE.NORMAL;
@@ -443,12 +444,20 @@ class GameScene extends Phaser.Scene {
   }
 
   // ----------------------------------------------------------
+  preload() {
+    this.load.json(this.stageKey, `assets/levels/${this.stageKey}.json`);
+  }
+
+  // ----------------------------------------------------------
   create() {
+    const stageData = this.cache.json.get(this.stageKey);
+    this.worldWidth = stageData ? stageData.worldWidth : 3200;
+
     // ---- scrolling BG ----
-    this.add.tileSprite(0, 0, WORLD_WIDTH, GAME_H, 'bg').setOrigin(0, 0).setScrollFactor(0.3);
+    this.add.tileSprite(0, 0, this.worldWidth, GAME_H, 'bg').setOrigin(0, 0).setScrollFactor(0.3);
 
     // ---- physics world ----
-    this.physics.world.setBounds(0, 0, WORLD_WIDTH, GAME_H + 200);
+    this.physics.world.setBounds(0, 0, this.worldWidth, GAME_H + 200);
 
     // ---- groups ----
     this.platforms     = this.physics.add.staticGroup();
@@ -466,14 +475,16 @@ class GameScene extends Phaser.Scene {
     this._buildLevel();
 
     // ---- player ----
-    this.player = this.physics.add.sprite(80, 400, 'silsea_idle', 'silsea_idle_01.png');
+    const startX = stageData && stageData.playerStart ? stageData.playerStart.x : 80;
+    const startY = stageData && stageData.playerStart ? stageData.playerStart.y : 400;
+    this.player = this.physics.add.sprite(startX, startY, 'silsea_idle', 'silsea_idle_01.png');
     this.player.setScale(0.5);
     this.player.setCollideWorldBounds(true);
     this.player.body.setSize(80, 115);
     this.player.body.setOffset(24, 12);
 
     // ---- camera ----
-    this.cameras.main.setBounds(0, 0, WORLD_WIDTH, GAME_H);
+    this.cameras.main.setBounds(0, 0, this.worldWidth, GAME_H);
     this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
 
     // ---- colliders ----
@@ -514,32 +525,25 @@ class GameScene extends Phaser.Scene {
 
   // ----------------------------------------------------------
   _buildLevel() {
+    const stageData = this.cache.json.get(this.stageKey);
+    if (!stageData) return;
+
     // Ground slabs
     const groundY = GAME_H - 32; // top of ground row
-    // Main ground – leave a few pits
-    const groundSegments = [
-      [0,    800],
-      [900,  1600],
-      [1700, 2200],
-      [2300, 3200],
-    ];
-    groundSegments.forEach(([start, end]) => {
-      for (let x = start; x < end; x += 64) {
+    const groundSegments = stageData.ground || [];
+    groundSegments.forEach(seg => {
+      for (let x = seg.start; x < seg.end; x += 64) {
         const tile = this.platforms.create(x + 32, groundY, 'tiles', 'terrain_grass_block');
         tile.refreshBody();
       }
     });
 
     // Floating platforms
-    const plats = [
-      [200, 440, 4], [400, 380, 3], [600, 320, 3],
-      [800, 400, 4], [1000, 340, 3],[1200, 280, 4],
-      [1400, 360, 3],[1500, 290, 3],[1700, 380, 4],
-      [1900, 310, 3],[2050, 250, 4],[2200, 380, 3],
-      [2400, 300, 4],[2550, 240, 3],[2700, 340, 3],
-      [2900, 380, 4],[3000, 310, 3],[3100, 260, 2],
-    ];
-    plats.forEach(([x, y, tiles]) => {
+    const plats = stageData.platforms || [];
+    plats.forEach(plat => {
+      const x = plat.x;
+      const y = plat.y;
+      const tiles = plat.tiles;
       for (let i = 0; i < tiles; i++) {
         let frameName = 'terrain_grass_horizontal_middle';
         if (i === 0) frameName = 'terrain_grass_horizontal_left';
@@ -551,19 +555,15 @@ class GameScene extends Phaser.Scene {
     });
 
     // Star boxes
-    const boxes = [
-      [250, 380], [450, 310], [650, 250], [900, 330], [1050, 270],
-      [1300, 210], [1600, 220], [1800, 310], [2100, 180], [2450, 230],
-      [2650, 170], [2950, 310],
-    ];
-    boxes.forEach(([x, y]) => {
-      const b = this.starBoxes.create(x, y, 'tiles', 'block_coin');
+    const boxes = stageData.starBoxes || [];
+    boxes.forEach(box => {
+      const b = this.starBoxes.create(box.x, box.y, 'tiles', 'block_coin');
       b.refreshBody();
       b.setData('hit', false);
     });
 
     // Enemies – raw potatoes (Snail)
-    const potatoXs = [350, 750, 1100, 1450, 1750, 2000, 2350, 2650, 2950];
+    const potatoXs = stageData.potatoes || [];
     potatoXs.forEach(x => {
       const e = this.enemies.create(x, GAME_H - 64, 'enemies', 'snail_walk_a');
       e.setData('type', 'potato');
@@ -575,24 +575,18 @@ class GameScene extends Phaser.Scene {
     });
 
     // Thorny pumpkins (Spike Slime)
-    const pumpkinXs = [500, 1200, 1900, 2500, 2800];
+    const pumpkinXs = stageData.pumpkins || [];
     pumpkinXs.forEach(x => {
-      const p = this.pumpkins.create(x, GAME_H - 64, 'enemies', 'slime_spike_rest');
+      const p = this.pumpkins.create(x, GAME_H - 96, 'enemies', 'slime_spike_rest');
       p.body.setSize(48, 30);
       p.body.setOffset(8, 34);
       p.refreshBody();
     });
 
     // Stars scattered on platforms
-    const starPositions = [
-      [220, 420],[260,420],[300,420],
-      [820,380],[860,380],
-      [1220,260],[1260,260],
-      [1920,290],[1960,290],[2000,290],
-      [2420,280],[2460,280],
-    ];
-    starPositions.forEach(([x,y]) => {
-      const s = this.stars.create(x, y, 'tiles', 'star');
+    const starPositions = stageData.stars || [];
+    starPositions.forEach(star => {
+      const s = this.stars.create(star.x, star.y, 'tiles', 'star');
       s.setBounceY(0.3);
       s.body.setAllowGravity(true);
     });
@@ -601,13 +595,15 @@ class GameScene extends Phaser.Scene {
   // ----------------------------------------------------------
   _buildHUD() {
     const cam = this.cameras.main;
+    const stageData = this.cache.json.get(this.stageKey);
+    const stageName = stageData ? stageData.stageName : 'Stage 1';
 
-    // Background panel
-    this.hudBg = this.add.rectangle(0, 0, 260, 72, 0x000000, 0.55)
+    // Background panel (widened to fit stage name)
+    this.hudBg = this.add.rectangle(0, 0, 360, 72, 0x000000, 0.55)
       .setOrigin(0, 0).setScrollFactor(0).setDepth(100);
 
     // Name label
-    this.nameText = this.add.text(10, 6, '1P 실세아', {
+    this.nameText = this.add.text(10, 6, `1P 실세아 [ ${stageName} ]`, {
       fontSize: '14px', fill: '#ffd700', fontFamily: 'sans-serif', fontStyle: 'bold'
     }).setScrollFactor(0).setDepth(101);
 
@@ -942,7 +938,7 @@ class GameScene extends Phaser.Scene {
     this._refreshHUD();
 
     // Spawn rainbow gate
-    const gate = this.add.image(2850, GAME_H - 120, 'gate');
+    const gate = this.add.image(this.worldWidth - 350, GAME_H - 120, 'gate');
     gate.setDepth(10);
 
     this.physics.pause();
@@ -960,7 +956,37 @@ class GameScene extends Phaser.Scene {
       ease: 'Sine.easeInOut'
     });
 
-    // Touch gate to show message (already shown above)
+    // Next Stage or Return to Title Button
+    const stageData = this.cache.json.get(this.stageKey);
+    const hasNext = stageData && stageData.nextStage;
+    const btnY = 440;
+    
+    const btnBg = this.add.rectangle(GAME_W / 2, btnY, 220, 50, 0x228844, 0.9)
+      .setStrokeStyle(3, 0x44ff88)
+      .setInteractive({ useHandCursor: true })
+      .setScrollFactor(0)
+      .setDepth(201);
+
+    const btnLabel = hasNext ? '다음 스테이지 ▶' : '처음으로 ◀';
+    const btnText = this.add.text(GAME_W / 2, btnY, btnLabel, {
+      fontSize: '20px', fill: '#ffffff',
+      fontFamily: 'sans-serif', fontStyle: 'bold'
+    }).setOrigin(0.5, 0.5).setScrollFactor(0).setDepth(202);
+
+    btnBg.on('pointerover', () => btnBg.setFillStyle(0x33aa55, 1));
+    btnBg.on('pointerout', () => btnBg.setFillStyle(0x228844, 0.9));
+
+    btnBg.on('pointerdown', () => {
+      this.sound.stopAll();
+      this.cameras.main.fadeOut(400, 0, 0, 0);
+      this.time.delayedCall(400, () => {
+        if (hasNext) {
+          this.scene.start('Game', { stageKey: stageData.nextStage });
+        } else {
+          this.scene.start('Title');
+        }
+      });
+    });
   }
 
   // ----------------------------------------------------------
@@ -981,7 +1007,7 @@ class GameScene extends Phaser.Scene {
   _spawnCloud() {
     if (this.gameOver || this.gameWon) return;
     const x = this.player.x + Phaser.Math.Between(300, 700);
-    if (x > WORLD_WIDTH - 100 || x < 100) return;
+    if (x > this.worldWidth - 100 || x < 100) return;
     const y = Phaser.Math.Between(60, 220);
     const c = this.clouds.create(x, y, 'cloud');
     c.setData('type', 'cloud');
@@ -1011,9 +1037,9 @@ class GameScene extends Phaser.Scene {
   _spawnMagpie() {
     if (this.gameOver || this.gameWon) return;
     const x = this.player.x + Phaser.Math.Between(300, 500) * (Math.random() < 0.5 ? 1 : -1);
-    if (x < 50 || x > WORLD_WIDTH - 50) return;
+    if (x < 50 || x > this.worldWidth - 50) return;
     const m = this.magpies.create(
-      Phaser.Math.Clamp(x, 50, WORLD_WIDTH - 50),
+      Phaser.Math.Clamp(x, 50, this.worldWidth - 50),
       Phaser.Math.Between(60, 180),
       'enemies', 'bee_a'
     );
@@ -1027,7 +1053,7 @@ class GameScene extends Phaser.Scene {
   // BOSS
   _spawnBoss() {
     this.bossSpawned = true;
-    this.boss = this.physics.add.sprite(2900, GAME_H - 100, 'enemies', 'slime_block_walk_a');
+    this.boss = this.physics.add.sprite(this.worldWidth - 300, GAME_H - 100, 'enemies', 'slime_block_walk_a');
     this.boss.setScale(2.5);
     this.boss.body.setSize(50, 40);
     this.boss.body.setOffset(7, 24);
@@ -1141,7 +1167,7 @@ class GameScene extends Phaser.Scene {
     }
 
     // ---- Spawn boss when player approaches ----
-    if (!this.bossSpawned && this.player.x > 2600) {
+    if (!this.bossSpawned && this.player.x > this.worldWidth - 600) {
       this._spawnBoss();
     }
 
@@ -1250,7 +1276,7 @@ class GameScene extends Phaser.Scene {
     this.enemies.getChildren().forEach(enemy => {
       if (!enemy.active || enemy.getData('type') !== 'potato') return;
       // Reverse at world limits or near pits (simple: reverse at x limits)
-      if (enemy.x < 20 || enemy.x > WORLD_WIDTH - 20
+      if (enemy.x < 20 || enemy.x > this.worldWidth - 20
           || enemy.body.blocked.right || enemy.body.blocked.left) {
         const dir = enemy.getData('dir') * -1;
         enemy.setData('dir', dir);
@@ -1259,12 +1285,12 @@ class GameScene extends Phaser.Scene {
       }
     });
 
-    // ---- Boss movement (patrol between x=2750 and x=3100) ----
+    // ---- Boss movement (patrol between x=worldWidth-450 and x=worldWidth-100) ----
     if (this.boss && this.boss.active) {
-      if (this.boss.x < 2750) {
+      if (this.boss.x < this.worldWidth - 450) {
         this.boss.setVelocityX(80);
         this.boss.setFlipX(false);
-      } else if (this.boss.x > 3100) {
+      } else if (this.boss.x > this.worldWidth - 100) {
         this.boss.setVelocityX(-80);
         this.boss.setFlipX(true);
       }
