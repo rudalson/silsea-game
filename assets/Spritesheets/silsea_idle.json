@@ -1,0 +1,116 @@
+{
+  "frames": [
+    {
+      "filename": "silsea_idle_01.png",
+      "rotated": false,
+      "trimmed": false,
+      "sourceSize": {
+        "w": 128,
+        "h": 136
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 136
+      },
+      "frame": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 136
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    {
+      "filename": "silsea_idle_02.png",
+      "rotated": false,
+      "trimmed": false,
+      "sourceSize": {
+        "w": 128,
+        "h": 136
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 136
+      },
+      "frame": {
+        "x": 128,
+        "y": 0,
+        "w": 128,
+        "h": 136
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    {
+      "filename": "silsea_idle_03.png",
+      "rotated": false,
+      "trimmed": false,
+      "sourceSize": {
+        "w": 128,
+        "h": 136
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 136
+      },
+      "frame": {
+        "x": 256,
+        "y": 0,
+        "w": 128,
+        "h": 136
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    {
+      "filename": "silsea_idle_05.png",
+      "rotated": false,
+      "trimmed": false,
+      "sourceSize": {
+        "w": 128,
+        "h": 136
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 136
+      },
+      "frame": {
+        "x": 384,
+        "y": 0,
+        "w": 128,
+        "h": 136
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    }
+  ],
+  "meta": {
+    "app": "https://www.codeandweb.com/texturepacker",
+    "version": "3.0",
+    "smartupdate": "$TexturePacker:SmartUpdate:c01151d67fa2105bed482521afa9c9cb:f13ad184e0394c8a4c2d0c4922ae9fbb:ff009d31b38d4aea6e394a8f838775a4$",
+    "image": "silsea_idle.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 512,
+      "h": 136
+    },
+    "scale": 1
+  }
+}

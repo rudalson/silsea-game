@@ -78,6 +78,8 @@ class BootScene extends Phaser.Scene {
 
   preload() {
     this.load.image('silsea_sprite_raw', 'assets/silsea_sprite.jpg');
+    this.load.atlas('silsea', 'assets/Spritesheets/silsea.png', 'assets/Spritesheets/silsea.json');
+    this.load.atlas('silsea_idle', 'assets/Spritesheets/silsea_idle.png', 'assets/Spritesheets/silsea_idle.json');
     this.load.audio('basic_bgm', 'assets/Sounds/basic_bgm.mp3');
     
     // Load Kenney spritesheets (XML format)!
@@ -170,14 +172,14 @@ class BootScene extends Phaser.Scene {
     this.anims.create({
       key: 'run',
       frames: [
-        { key: 'silsea_sprite_clean', frame: 'run_0' },
-        { key: 'silsea_sprite_clean', frame: 'run_1' },
-        { key: 'silsea_sprite_clean', frame: 'run_2' },
-        { key: 'silsea_sprite_clean', frame: 'run_3' },
-        { key: 'silsea_sprite_clean', frame: 'run_4' },
-        { key: 'silsea_sprite_clean', frame: 'run_5' },
-        { key: 'silsea_sprite_clean', frame: 'run_6' },
-        { key: 'silsea_sprite_clean', frame: 'run_7' }
+        { key: 'silsea', frame: 'silsea_run_01.png' },
+        { key: 'silsea', frame: 'silsea_run_02.png' },
+        { key: 'silsea', frame: 'silsea_run_03.png' },
+        { key: 'silsea', frame: 'silsea_run_04.png' },
+        { key: 'silsea', frame: 'silsea_run_05.png' },
+        { key: 'silsea', frame: 'silsea_run_06.png' },
+        { key: 'silsea', frame: 'silsea_run_07.png' },
+        { key: 'silsea', frame: 'silsea_run_08.png' }
       ],
       frameRate: 12,
       repeat: -1
@@ -186,11 +188,10 @@ class BootScene extends Phaser.Scene {
     this.anims.create({
       key: 'idle',
       frames: [
-        { key: 'silsea_sprite_clean', frame: 'idle_0' },
-        { key: 'silsea_sprite_clean', frame: 'idle_1' },
-        { key: 'silsea_sprite_clean', frame: 'idle_2' },
-        { key: 'silsea_sprite_clean', frame: 'idle_3' },
-        { key: 'silsea_sprite_clean', frame: 'idle_4' }
+        { key: 'silsea_idle', frame: 'silsea_idle_01.png' },
+        { key: 'silsea_idle', frame: 'silsea_idle_02.png' },
+        { key: 'silsea_idle', frame: 'silsea_idle_03.png' },
+        { key: 'silsea_idle', frame: 'silsea_idle_05.png' }
       ],
       frameRate: 6,
       repeat: -1
@@ -365,7 +366,7 @@ class TitleScene extends Phaser.Scene {
     }).setOrigin(0.5, 0.5);
 
     // ---- Player preview ----
-    const preview = this.add.sprite(GAME_W / 2, 370, 'silsea_sprite_clean', 'idle_0')
+    const preview = this.add.sprite(GAME_W / 2, 370, 'silsea_idle', 'silsea_idle_01.png')
       .setScale(0.7);
     preview.anims.play('idle');
 
@@ -465,7 +466,7 @@ class GameScene extends Phaser.Scene {
     this._buildLevel();
 
     // ---- player ----
-    this.player = this.physics.add.sprite(80, 400, 'silsea_sprite_clean', 'idle_0');
+    this.player = this.physics.add.sprite(80, 400, 'silsea_idle', 'silsea_idle_01.png');
     this.player.setScale(0.5);
     this.player.setCollideWorldBounds(true);
     this.player.body.setSize(80, 115);
